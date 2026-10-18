@@ -1,0 +1,93 @@
+stallion milestone 1: GIC quiesce, IOKit personalities for the Pixel 10a
+
+- /arm-io/gic "sweet-quiesce" (mkadt --target stallion only): before
+  Group 1 is enabled, disable every non-secure SPI (GICD_ICENABLERn, boot
+  CPU) and every SGI/PPI except the virtual timer and the IPI SGI
+  (GICR_ICENABLER0, each CPU). Nothing on SWEET is interrupt driven; the
+  Pixel ABL's GIC state is unknown and a level SPI left enabled and
+  asserted would storm sleh_irq.
+- SweetPlatformExpert also matches root compatible 'google,stallion',
+  SweetCPU also matches 'google,zumapro-cpu' (separate personalities, so
+  sweet's 'xiaomi,sweet' / 'qcom,kryo470' entries are unchanged).
+  SweetCPU's MPIDR check (Aff1 = core, 0x000-0x700) already fits zumapro.
+
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -20,6 +20,16 @@
+ #if defined(SWEET)
+ /* Phone default; QEMU virt wires the architected virtual timer to INTID 27. */
+ SECURITY_READ_ONLY_LATE(uint32_t) sweet_vtimer_intid = SWEET_VTIMER_INTID;
++/*
++ * ADT /arm-io/gic "sweet-quiesce": disable every non-secure SPI and every
++ * PPI/SGI except the virtual timer and the IPI SGI before enabling Group 1.
++ * Nothing on SWEET is interrupt driven yet; a level SPI that the bootloader
++ * left enabled (and asserted) would otherwise storm sleh_irq forever.
++ */
++SECURITY_READ_ONLY_LATE(static uint32_t) sweet_gic_quiesce = 0;
++#define SWEET_GICD_TYPER          0x4
++#define SWEET_GICD_ICENABLER(n)   (0x180 + 4 * (n))
++#define SWEET_GICR_ICENABLER0     0x10180
+ #endif
+ 
+ static vm_offset_t gicd_base;
+@@ -117,6 +127,10 @@
+ 			sweet_vtimer_intid = intid;
+ 		}
+ 		kprintf("SWEET GIC: virtual timer INTID %u\n", sweet_vtimer_intid);
++		if (SecureDTGetProperty(entry, "sweet-quiesce", &timer_prop, &timer_size) == kSuccess &&
++		    timer_size == sizeof(uint32_t) && *(const uint32_t *)timer_prop != 0) {
++			sweet_gic_quiesce = 1;
++		}
+ #endif
+ 
+ 		vm_offset_t soc_base_phys = pe_arm_get_soc_base_phys();
+@@ -141,6 +155,17 @@
+ 		}
+ 
+ 		gicr_size = gicr_size_prop;
++
++#if defined(SWEET)
++		if (sweet_gic_quiesce) {
++			/* ITLinesNumber: 32 * (N + 1) INTIDs; ICENABLER0 (SGI/PPI) is per-CPU. */
++			uint32_t lines = gicd_read32(SWEET_GICD_TYPER) & 0x1f;
++			for (uint32_t n = 1; n <= lines; n++) {
++				gicd_write32(SWEET_GICD_ICENABLER(n), 0xFFFFFFFF);
++			}
++			kprintf("SWEET GIC: quiesced %u SPIs\n", lines * 32);
++		}
++#endif
+ 	}
+ 
+ 	// Find the redistributor for this processor
+@@ -172,6 +197,9 @@
+ 	 * from the non-secure side even after this write; delivery still works.
+ 	 */
+ 	gicr_write32(GICR_IGROUPR0, 0xFFFFFFFF);
++	if (sweet_gic_quiesce) {
++		gicr_write32(SWEET_GICR_ICENABLER0, ~((1U << sweet_vtimer_intid) | (1U << SWEET_IPI_SGI)));
++	}
+ 	for (unsigned int i = 0; i < 32; i += 4) {
+ 		gicr_write32(GICR_IPRIORITYR0 + i, 0xA0A0A0A0);
+ 	}
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -47,6 +47,19 @@
+     "     'IONameMatch'     = 'qcom,kryo470';"
+     "     'IOProbeScore'    = 10000:32;"
+     "   },"
++    /* Pixel 10a "stallion" (tools/mkadt.py --target stallion): same drivers. */
++    "   {"
++    "     'IOClass'         = SweetPlatformExpert;"
++    "     'IOProviderClass' = IOPlatformExpertDevice;"
++    "     'IONameMatch'     = 'google,stallion';"
++    "     'IOProbeScore'    = 10000:32;"
++    "   },"
++    "   {"
++    "     'IOClass'         = SweetCPU;"
++    "     'IOProviderClass' = IOPlatformDevice;"
++    "     'IONameMatch'     = 'google,zumapro-cpu';"
++    "     'IOProbeScore'    = 10000:32;"
++    "   },"
+     "   {"
+     "     'IOClass'         = AppleKeyStore;"
+     "     'IOProviderClass' = IOResources;"

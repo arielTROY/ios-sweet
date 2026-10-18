@@ -77,6 +77,15 @@ static int magic_ok(const char *m)
 typedef void (*xnu_entry_t)(uint64_t boot_args_pa);
 
 extern char _end[];
+extern char _head[];
+
+#ifdef TARGET_STALLION
+/* shim.c: re-arm the CPU7 sentinel (whole-phone PSCI reset at a deadline). */
+void sentinel_kick(unsigned s);
+#ifndef SENTINEL_XNU_S
+#define SENTINEL_XNU_S	120	/* hard deadline for one XNU run */
+#endif
+#endif
 
 #ifdef TARGET_STALLION
 /* Pixel fastboot ignores the ramdisk we send: the payload is appended to
@@ -104,8 +113,15 @@ const char *loader_boot(uintptr_t dtb)
 
 #ifdef TARGET_STALLION
 	p = find_embedded();
-	if (p)
-		rd_start = rd_end = (uintptr_t)p;
+	if (p) {
+		/* Payload end: the furthest segment or the ADT. */
+		uint64_t end = p->adt_off + p->adt_size;
+		for (uint32_t i = 0; i < p->nsegs && i < 64; i++)
+			if (p->segs[i].file_off + p->segs[i].file_size > end)
+				end = p->segs[i].file_off + p->segs[i].file_size;
+		rd_start = (uintptr_t)p;
+		rd_end = rd_start + end;
+	}
 #endif
 	if (!p) {
 		if (!fdt_chosen_u64(dtb, "linux,initrd-start", &rd_start) ||
@@ -127,6 +143,23 @@ const char *loader_boot(uintptr_t dtb)
 	/* The payload must not overlap where the kernel goes. */
 	if (rd_end > p->phys_base && rd_start < p->phys_base + p->mem_size)
 		return "ramdisk overlaps kernel memory";
+#ifdef TARGET_STALLION
+	/* Nor the shim itself: the CPU7 sentinel keeps running from it. */
+	if ((uintptr_t)_end > p->phys_base && (uintptr_t)_head < p->phys_base + p->mem_size)
+		return "shim overlaps kernel memory";
+	/* Framebuffer for XNU's early console: only a complete ABL node. */
+	uint32_t fb_w = 0, fb_h = 0, fb_stride = 0;
+	uintptr_t fb = fdt_find_fb(dtb, &fb_w, &fb_h, &fb_stride);
+	if (!fb_w || !fb_h || fb_stride < fb_w * 4)
+		fb = 0;
+	/* From here on XNU owns the run: the copy below is slow with the MMU
+	 * off, and XNU resets itself only on panic (ADT sweet-panic-reset).
+	 * The sentinel catches every hang. */
+	sentinel_kick(SENTINEL_XNU_S);
+#else
+	uintptr_t fb = FB_BASE;
+	uint32_t fb_w = FB_W, fb_h = FB_H, fb_stride = FB_STRIDE;
+#endif
 
 	for (uint32_t i = 0; i < p->nsegs; i++) {
 		const struct payload_seg *s = &p->segs[i];
@@ -151,11 +184,12 @@ const char *loader_boot(uintptr_t dtb)
 	ba->physBase = p->phys_base;
 	ba->memSize = p->mem_size;
 	ba->topOfKernelData = top;
-	ba->Video.v_baseAddr = FB_BASE;
-	ba->Video.v_display = 1;
-	ba->Video.v_rowBytes = FB_STRIDE;
-	ba->Video.v_width = FB_W;
-	ba->Video.v_height = FB_H;
+	/* XNU's early console uses this (v_baseAddr 0 = no framebuffer). */
+	ba->Video.v_baseAddr = fb;
+	ba->Video.v_display = fb ? 1 : 0;
+	ba->Video.v_rowBytes = fb_stride;
+	ba->Video.v_width = fb_w;
+	ba->Video.v_height = fb_h;
 	ba->Video.v_depth = 32;
 	ba->deviceTreeP = adt_pa - pa_of_va_base;	/* xnu reads it with the MMU on: a VA */
 	ba->deviceTreeLength = (uint32_t)p->adt_size;
@@ -167,6 +201,10 @@ const char *loader_boot(uintptr_t dtb)
 	uintptr_t entry_pa = p->entry_va + pa_of_va_base;
 	con_hex("JUMP", entry_pa);
 	con_str("XNU", "jumping (fbcon clears screen)");
+#ifdef TARGET_STALLION
+	con_hex2("XNUFB", "pa=", fb, "w/h=", (fb_w << 16) | (fb_h & 0xffff));
+	con_hex("SENTINEL", SENTINEL_XNU_S);
+#endif
 
 	/* Everything was written with the MMU and caches off; drop any stale I-cache lines too. */
 	__asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");

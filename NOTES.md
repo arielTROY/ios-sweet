@@ -26,6 +26,32 @@ Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dme
 - A/B: "AB Decision: decrement active slot boot retry"; slot data a 0x1c00 -> 0x1e01 after
   a stock Android boot. Watch it.
 
+### >>> UPDATE 2026-10-18 late (STALLION XNU MILESTONE 1 CODE, not yet built or run) <<<
+
+Plan + per-patch table (all 80 patches: G/S/M, what changes for stallion):
+**`research/stallion-xnu-plan.md`** (force-added; research/ is gitignored).
+One kernel for both phones, no STALLION machine config: board facts come
+from the ADT (`tools/mkadt.py --target stallion`) and boot_args->Video.
+- **xnu 0082** early console from boot_args->Video (no more hard-coded
+  0x9c000000), RAM log = ramoops console zone (ADT `/sweet-ramlog`,
+  0xfd3ff000) from right after PE_init_platform through a serial device,
+  panic/halt -> PSCI SYSTEM_RESET when ADT `/chosen sweet-panic-reset` (ms)
+  is set; optional `sweet-reset-after` (s) hang watchdog.
+- **xnu 0083** GIC quiesce (`sweet-quiesce`), IOKit matches `google,stallion`
+  / `google,zumapro-cpu`. Numbered from 0082 because upstream main already
+  has a 0081 (sweet USB link state, fdad0de) that the fork lacks.
+- **shim**: EL2 drop also sets CNTVOFF=0, VTTBR=0, ICC_SRE_EL2.SRE|Enable;
+  boot_args Video = FB from live FDT or 0; payload/shim overlap checks;
+  sentinel re-armed to 120 s (`SENTINEL_XNU_S`) right before jumping to XNU.
+- **mkadt** `--target stallion [--mem B:S] [--fb B:W:H:STRIDE]`; sweet ADT
+  output byte-identical to before.
+Checked locally only: full series applies with `patch -F0` to vanilla
+xnu-8796.141.3; the 10 touched units compile to objects with Xcode clang
+against CI build tree 39158169212. Before the first XNU run: confirm the RAM
+window (default 0xA0000000+544M is a DTS-based guess) from `/proc/iomem`.
+NOTE (later): its PSCI-reset and pstore assumptions are contradicted by the
+boot experiments above (PSCI reset did not reset; pstore unreadable from shell).
+
 ### >>> UPDATE 2026-10-18 (PIXEL 10a PORT KICKOFF — read first if working on stallion) <<<
 
 New goal (fork `arielTROY/ios-sweet`): port everything to **Pixel 10a "stallion"

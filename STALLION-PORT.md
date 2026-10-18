@@ -111,6 +111,13 @@ exactly this.
 - UFS link state after ABL handoff.
 - EL2 entry: shim may need to drop to EL1 or run at EL2 (XNU expects EL1).
 
+## XNU milestone 1 (2026-10-18, code only)
+
+See `research/stallion-xnu-plan.md`: patch-by-patch table and the
+milestone 1 design (same kernel prints to the ramoops RAM log; panic ->
+PSCI SYSTEM_RESET; hangs -> shim CPU7 sentinel). Implemented as xnu
+0082/0083, `mkadt.py --target stallion` and shim loader changes.
+
 ## Next concrete action
 
 Clone the stallion kernel device tree and extract the real DTB:
