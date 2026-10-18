@@ -2,6 +2,19 @@
 
 ## Agent handoff / active work (2026-10-15, latest)
 
+### >>> UPDATE 2026-10-19 (stallion USB log gadget, compiled only, NOT run) <<<
+
+`shim/usblog.c` + `usblog.h`: bare-metal CDC-ACM serial port on the DWC3 @0x11210000
+(ported from xnu patches 0072-0077). Build: `SHIM_DEFS=-DSHIM_USBLOG bash shim/build-stallion.sh`
+(builds clean, no ABS64). The hooks are all behind `#ifdef SHIM_USBLOG`: log.c `log_line()` -> USB,
+shim.c (init after the FB lines, waits <=10 s (`USBLOG_WAIT_S`) for the host to configure it,
+`delay_ms` polls, flush before the final reset), and loader.c (`usblog_stop()` before jumping to xnu).
+Mac side: `tools/stallion-usblog.sh` (waits for /dev/cu.usbmodem*, tees to logs/).
+Assumes ABL leaves HSI0 power/clocks/eUSB2 PHY/repeater on; it only writes DWC3 core registers.
+Nothing has run on hardware. The init sequence, failure-mode list and the Exynos glue/PHY steps
+(not used yet) are in the header comment of usblog.c. Opt-in extras: `-DUSBLOG_PD_PROBE` (pd_hsi0
+status via the PMU-read SMC), `-DUSBLOG_FORCE_FS`.
+
 ### >>> UPDATE 2026-10-18 late (stallion boot experiments — read first) <<<
 
 Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dmesg`; its

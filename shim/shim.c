@@ -12,6 +12,12 @@
 #include "mmu.h"
 #include "loader.h"
 #include "ufs.h"
+#ifdef SHIM_USBLOG
+#include "usblog.h"
+#ifndef USBLOG_WAIT_S
+#define USBLOG_WAIT_S		10	/* how long to wait for the host to configure us */
+#endif
+#endif
 
 #ifdef TARGET_STALLION
 /* Pixel 10a / Tensor G4 (zumapro): values from stallion DTS. */
@@ -119,8 +125,11 @@ static uint64_t now(void)
 static void delay_ms(unsigned ms)
 {
 	uint64_t end = now() + rsr("cntfrq_el0") / 1000 * ms;
-	while (now() < end)
-		;
+	while (now() < end) {
+#ifdef SHIM_USBLOG
+		usblog_poll();
+#endif
+	}
 }
 
 static void __attribute__((noreturn)) reset(unsigned after_s)
@@ -489,6 +498,23 @@ void shim_main(uint64_t dtb)
 	con_hex("FBSTR", fb_stride);
 	con_skip();
 
+#ifdef SHIM_USBLOG
+	/* USB log port: take the DWC3 over from ABL, wait (bounded) for the
+	 * host to configure us so everything after this streams live. */
+	stage = "usblog";
+	{
+		int urc = usblog_init();
+		con_hex2("USBLOG", "rc=", (uint32_t)urc, "wait_s=", USBLOG_WAIT_S);
+		if (urc == 0) {
+			uint64_t end = now() + rsr("cntfrq_el0") * USBLOG_WAIT_S;
+			for (uint64_t i = 0; i < 4000000000ULL && !usblog_connected() && now() < end; i++)
+				usblog_poll();
+			con_str("USBLOG", usblog_connected() ? "host configured us" : "no host, continuing");
+		}
+		con_skip();
+	}
+#endif
+
 	/* The whole ABL FDT goes to the prz log: node names + reg/compatible. */
 	stage = "fdt dump";
 	fdt_dump(dtb, log_line);
@@ -523,6 +549,9 @@ void shim_main(uint64_t dtb)
 	con_skip();
 
 	con_str("SHIM", "recon done, reset to android");
+#ifdef SHIM_USBLOG
+	usblog_flush(3000);
+#endif
 	reset(2);
 }
 #else
