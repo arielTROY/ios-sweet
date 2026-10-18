@@ -253,3 +253,15 @@ Build/run (needs a CI kernel with 0082/0083; nothing was built yet):
 3. FB: ABL framebuffer if scanning, else DECON/DSIM.
 4. Buttons (ALIVE GPIO polled), then USB (DWC3 + Exynos PHY) for live log
    and networking, then ACPM regulators + FocalTech SPI touch.
+
+## USB (live FDT facts, 2026-10-19)
+- usb@11210000 `samsung,exynos9-dwusb`, dr_mode peripheral, power-domain pd_hsi0, sysreg-hsi0,
+  is_not_vbus_pad=1 (software VBUS/session override needed), maximum-speed super-speed, force_gen1.
+- **DMA through a SysMMU** (`iommus`, dma-window 0..0xf_ffffffff) and S2MPU (`s2mpus` on the PHY):
+  shim/XNU DMA by physical address only works if the SysMMU is bypassed/disabled after ABL.
+- phy@11100000 `samsung,exynos-usbdrd-phy` regs 0x11100000/0x11110000/0x11120000 (0x200 each),
+  0x11130000/0x11140000 (0x800, combo/DP), phy_version 0x600, eusb 0x701, sub 0x801, ref clock
+  19.2 MHz (0x124f800), **PMU isolation at PMU+0x3eb0 (USB) / +0x3eb4 (DP)**.
+- eUSB2 repeater: I2C device 0x3E (`samsung,eusb-repeater`) with tune params.
+- Plan: dump these blocks from Android via sweetmem.ko (Linux-configured, gadget running) and from the
+  shim after handoff (timing channel), diff, replay the missing steps in shim/usblog.c.
