@@ -29,7 +29,14 @@ static inline void wr32(uintptr_t a, uint32_t v) { *(volatile uint32_t *)a = v; 
 static inline uint32_t rd32(uintptr_t a) { return *(volatile uint32_t *)a; }
 
 static uint32_t prz_off;
+/* The USI UART is only clocked after `fastboot oem uart enable`; a read
+ * of an unclocked Exynos block stalls the bus for good (froze the phone
+ * on the Google logo, 2026-10-18). Opt in with -DSHIM_UART. */
+#ifdef SHIM_UART
 static uint32_t uart_ok = 1;
+#else
+static uint32_t uart_ok = 0;
+#endif
 
 static void uart_putc(char c)
 {

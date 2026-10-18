@@ -15,8 +15,8 @@
 
 #ifdef TARGET_STALLION
 /* Pixel 10a / Tensor G4 (zumapro): values from stallion DTS. */
-#define IMEM_RESTART_REASON	0x15460c00UL	/* unused placeholder */
-#define RESTART_BOOTLOADER	0x77665500U
+#define IMEM_RESTART_REASON	0x15460810UL	/* pmu_alive + SYSIP_DAT0 (pixel-zuma-reboot) */
+#define RESTART_BOOTLOADER	0xfcU		/* REBOOT_MODE_BOOTLOADER */
 #define PSHOLD			0x15463e9cUL	/* pmu_system_controller + 0x3e9c */
 
 #define GICD_BASE		0x10400000UL
@@ -25,6 +25,9 @@
 #define VTIMER_INTID		27	/* architected PPI 11 */
 #define PTIMER_INTID		30	/* non-sec phys PPI 14 */
 #define TIMEBASE_MHZ_X100	2457	/* 24.576 MHz */
+#ifndef SENTINEL_S
+#define SENTINEL_S		45	/* hard deadline for one shim run */
+#endif
 #define SMP_TARGET(mp)		((mp) << 8)
 #else
 #define IMEM_RESTART_REASON	0x146aa65cUL	/* qcom,msm-imem restart_reason@65c */
@@ -125,7 +128,16 @@ static void __attribute__((noreturn)) reset(unsigned after_s)
 	con_skip();
 	con_str("RESET", after_s > 20 ? "in 40s" : "in 20s");
 	delay_ms(after_s * 1000);
+#ifdef TARGET_STALLION
+#ifdef RESET_TO_FASTBOOT	/* untested: SMC id/args unverified */
+	/* Reboot straight to fastboot: REBOOT_MODE_BOOTLOADER at
+	 * pmu_alive+SYSIP_DAT0 via the EL3 PRIV_REG service. Falls back
+	 * to a normal reset if the SMC isn't implemented here. */
+	smc(0x82000504, IMEM_RESTART_REASON, 1, RESTART_BOOTLOADER);
+#endif
+#else
 	wr32(IMEM_RESTART_REASON, RESTART_BOOTLOADER);
+#endif
 	__asm__ volatile("dsb sy" ::: "memory");
 	smc(PSCI_SYSTEM_RESET, 0, 0, 0);
 	wr32(PSHOLD, 0);
@@ -182,6 +194,25 @@ void exc_handler(uint64_t slot, uint64_t *regs)
 
 /* ---- SMP ---- */
 
+#ifdef TARGET_STALLION
+#define SENTINEL_CPU	7		/* MPIDR 0x700, the X4 core */
+extern void sentinel_entry(void);
+extern volatile uint64_t sentinel_deadline;
+
+/* (Re)arm the sentinel: whole-phone reset in `s` seconds from now. */
+static void sentinel_kick(unsigned s)
+{
+	sentinel_deadline = now() + rsr("cntfrq_el0") * s;
+	__asm__ volatile("dsb sy" ::: "memory");
+}
+
+static uint64_t sentinel_start(unsigned s)
+{
+	sentinel_kick(s);
+	return smc(PSCI_CPU_ON, SMP_TARGET(SENTINEL_CPU), (uintptr_t)sentinel_entry, 0);
+}
+#endif
+
 static uintptr_t find_gicr(void);
 
 void secondary_main(uint64_t idx)
@@ -209,6 +240,11 @@ static void __attribute__((unused)) test_smp(void)
 	int64_t ret[NR_CPUS];
 
 	for (int i = 1; i < NR_CPUS; i++)
+#ifdef SENTINEL_CPU
+		if (i == SENTINEL_CPU)
+			ret[i] = 0;
+		else
+#endif
 		ret[i] = smc(PSCI_CPU_ON, SMP_TARGET(i), (uintptr_t)secondary_entry, i);
 	delay_ms(500);
 	for (int i = 1; i < NR_CPUS; i++) {
@@ -399,15 +435,29 @@ static uint32_t to_us(uint64_t ticks)
  */
 void shim_main(uint64_t dtb)
 {
-	/* Log sink is live before the console: UART + prz need no setup. */
+	/* Before anything that could stall: a spare core that resets the
+	 * phone at the deadline, so a hang never needs a finger on the
+	 * power button. */
+	uint64_t sret = sentinel_start(SENTINEL_S);
+#ifdef CANARY1
+	/* Canary: does the sentinel fire? Hang here on purpose. */
+	(void)sret;
+	for (;;)
+		__asm__ volatile("wfe");
+#endif
+
+	/* Log sink is live before the console: prz needs no setup. */
 	stage = "fdt";
 	uint32_t fb_w = 0, fb_h = 0, fb_stride = 0;
 	uintptr_t fb = fdt_find_fb(dtb, &fb_w, &fb_h, &fb_stride);
 	if (fb)
 		con_set_fb(fb);
+	else
+		con_set_fb(0);		/* log-only run: never touch the screen */
 
 	con_clear(RED);
 	con_str("SHIM", "stallion milestone A: recon");
+	con_hex2("SENTINEL", "cpu_on=", (uint32_t)sret, "s=", SENTINEL_S);
 	con_hex2("DTB", "at=", dtb, "magic=", dtb ? __builtin_bswap32(rd32(dtb)) : 0);
 	con_hex2("FB", "fdt=", fb, "w/h=", (fb_w << 16) | (fb_h & 0xffff));
 	con_hex("FBSTR", fb_stride);
@@ -447,8 +497,7 @@ void shim_main(uint64_t dtb)
 	con_skip();
 
 	con_str("SHIM", "recon done, reset to android");
-	delay_ms(15000);
-	reset(5);
+	reset(2);
 }
 #else
 void shim_main(uint64_t dtb)

@@ -20,6 +20,13 @@ _head:
 	.globl _start
 _start:
 	msr	daifset, #0xf
+#ifdef CANARY0
+	/* Canary: prove the bootloader jumps here, touch nothing, reset. */
+	movz	x0, #0x0009
+	movk	x0, #0x8400, lsl #16	/* PSCI SYSTEM_RESET */
+	smc	#0
+	b	.
+#endif
 	mov	x19, x0			/* DTB pointer from ABL */
 #ifdef TARGET_STALLION
 	/* Pixel ABL enters at EL2 (arm64 boot protocol). Drop to EL1h so
@@ -62,6 +69,41 @@ _start:
 	bl	shim_main
 3:	wfe
 	b	3b
+
+/*
+ * Sentinel core (stallion): PSCI CPU_ON target that resets the whole
+ * phone once CNTPCT passes sentinel_deadline, whatever the boot CPU is
+ * doing (a load from an unclocked block stalls only that core). No
+ * stack, no MMU, works at EL2 or EL1. The boot CPU moves the deadline
+ * with sentinel_kick(); 0 means disarmed.
+ */
+	.globl sentinel_entry
+sentinel_entry:
+	msr	daifset, #0xf
+	mrs	x9, CurrentEL
+	cmp	x9, #(2 << 2)
+	b.ne	1f
+	mrs	x9, cnthctl_el2
+	orr	x9, x9, #3
+	msr	cnthctl_el2, x9
+1:	adr	x2, sentinel_deadline
+2:	isb
+	ldr	x1, [x2]
+	cbz	x1, 2b
+	mrs	x3, cntpct_el0
+	cmp	x3, x1
+	b.lo	2b
+	movz	x0, #0x0009
+	movk	x0, #0x8400, lsl #16	/* PSCI SYSTEM_RESET */
+	smc	#0
+	b	2b
+
+	.data
+	.balign	8
+	.globl sentinel_deadline
+sentinel_deadline:
+	.quad	0
+	.text
 
 /* PSCI CPU_ON target. x0 = context id = cpu index (1..7). */
 	.globl secondary_entry

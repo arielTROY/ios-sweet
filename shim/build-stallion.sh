@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 CC=aarch64-elf-gcc
 OBJCOPY=aarch64-elf-objcopy
-CFLAGS="-DTARGET_STALLION -O2 -ffreestanding -nostdlib -fno-pic -mgeneral-regs-only -mstrict-align -fno-stack-protector -Wall -Wextra"
+CFLAGS="-DTARGET_STALLION ${SHIM_DEFS:-} -O2 -ffreestanding -nostdlib -fno-pic -mgeneral-regs-only -mstrict-align -fno-stack-protector -Wall -Wextra"
 mkdir -p out-st
 for f in start.S shim.c console.c mmu.c fdt.c loader.c ufs.c log.c; do
 	$CC $CFLAGS -c $f -o out-st/${f%.*}.o

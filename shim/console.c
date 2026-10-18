@@ -11,7 +11,11 @@
 #define MARGIN		24
 #define LABEL_COLS	8
 
+#ifdef TARGET_STALLION
+volatile uint32_t *con_fb = 0;	/* set by con_set_fb after FDT detection */
+#else
 volatile uint32_t *con_fb = (volatile uint32_t *)FB_BASE;
+#endif
 static uint32_t con_bg;
 static int row;
 static char cur_line[96];
@@ -35,11 +39,12 @@ static void flush_line(void)
 
 void con_clear(uint32_t bg)
 {
-	for (int y = 0; y < FB_H; y++) {
-		volatile uint32_t *line = con_fb + y * (FB_STRIDE / 4);
-		for (int x = 0; x < FB_W; x++)
-			line[x] = bg;
-	}
+	if (con_fb)
+		for (int y = 0; y < FB_H; y++) {
+			volatile uint32_t *line = con_fb + y * (FB_STRIDE / 4);
+			for (int x = 0; x < FB_W; x++)
+				line[x] = bg;
+		}
 	con_bg = bg;
 	row = 0;
 }
@@ -52,7 +57,7 @@ static void put_char(int col, char ch, uint32_t fg)
 		cur_line[cur_col++] = ch;
 	const unsigned char *g = font8x16[ch - 0x20];
 	int x0 = MARGIN + col * CH_W, y0 = MARGIN + row * CH_H;
-	if (x0 + CH_W > FB_W || y0 + CH_H > FB_H)
+	if (!con_fb || x0 + CH_W > FB_W || y0 + CH_H > FB_H)
 		return;
 	for (int gy = 0; gy < 16; gy++)
 		for (int gx = 0; gx < 8; gx++) {
