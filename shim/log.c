@@ -9,6 +9,9 @@
  *      as /sys/fs/pstore/console-ramoops-0 after the next boot - readable
  *      over plain `adb shell` (mode 0444), no root needed.
  *
+ *   3. With -DSHIM_USBLOG: a USB CDC-ACM serial port on the USB-C cable
+ *      (usblog.c; Mac: tools/stallion-usblog.sh).
+ *
  * prz record layout (fs/pstore/ram_core.c, no ECC on stallion):
  *   u32 sig = 0 ^ PERSISTENT_RAM_SIG = 0x43474244
  *   u32 start (circular write offset; we keep 0)
@@ -16,6 +19,9 @@
  *   u8  data[]
  */
 #include <stdint.h>
+#ifdef SHIM_USBLOG
+#include "usblog.h"
+#endif
 
 #define UART_BASE	0x10870000UL
 #define UTRSTAT		0x10
@@ -54,6 +60,16 @@ static void uart_putc(char c)
 
 void log_line(const char *line)
 {
+#ifdef SHIM_USBLOG
+	/* USB CDC-ACM log port (usblog.c); queued until a host connects. */
+	{
+		unsigned n = 0;
+		while (line[n] && n < 4096)
+			n++;
+		usblog_write(line, n);
+		usblog_write("\r\n", 2);
+	}
+#endif
 	/* UART (optional cable) */
 	for (const char *p = line; *p; p++)
 		uart_putc(*p);

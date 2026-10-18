@@ -11,6 +11,9 @@
 #include "console.h"
 #include "fdt.h"
 #include "loader.h"
+#ifdef SHIM_USBLOG
+#include "usblog.h"
+#endif
 
 #define BOOT_LINE_LENGTH	608
 #define PAGE_16K		0x4000UL
@@ -206,6 +209,10 @@ const char *loader_boot(uintptr_t dtb)
 	con_hex("SENTINEL", SENTINEL_XNU_S);
 #endif
 
+#ifdef SHIM_USBLOG
+	/* The DWC3 DMAs into the shim's .bss; halt it before xnu owns memory. */
+	usblog_stop();
+#endif
 	/* Everything was written with the MMU and caches off; drop any stale I-cache lines too. */
 	__asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");
 	((xnu_entry_t)entry_pa)(ba_pa);
