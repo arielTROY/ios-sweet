@@ -20,6 +20,27 @@ _head:
 	.globl _start
 _start:
 	msr	daifset, #0xf
+#ifdef CANARY9
+	/* Timing proof: feed ABL's armed watchdog (cl0 WTCNT, plain
+	 * non-secure write as in s3c2410_wdt) for ~90 s, then stop and let
+	 * it fire. If this code runs, the phone comes back ~90 s later than
+	 * the CANARY0 baseline. */
+	movz	x2, #0x0008
+	movk	x2, #0x1006, lsl #16	/* WDT cl0 WTCNT */
+	mrs	x4, cntpct_el0
+	movz	x5, #0x83d6, lsl #16	/* 90 s * 24.576 MHz = 0x83d60000 */
+	add	x5, x4, x5
+	mov	x6, #1
+	lsl	x6, x6, #31		/* iteration cap if CNTPCT is frozen */
+1:	movz	w3, #0xffff
+	str	w3, [x2]
+	subs	x6, x6, #1
+	b.eq	2f
+	mrs	x4, cntpct_el0
+	cmp	x4, x5
+	b.lo	1b
+2:	b	2b
+#endif
 #ifdef CANARY8
 	/* Clean exit without any reset: hand control back to ABL. ABL's
 	 * handoff (0xe2b4c) cleared SCTLR_EL1.M|C on its identity map and
