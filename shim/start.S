@@ -20,6 +20,91 @@ _head:
 	.globl _start
 _start:
 	msr	daifset, #0xf
+#ifdef CANARY8
+	/* Clean exit without any reset: hand control back to ABL. ABL's
+	 * handoff (0xe2b4c) cleared SCTLR_EL1.M|C on its identity map and
+	 * called us from its EL2 stub (blr x7; eret). Restore M|C and
+	 * return: the stub erets into ABL, which takes its "kernel
+	 * returned" error path (0xe4b0c) and stays in its own world. x30,
+	 * ELR_EL2 and SPSR_EL2 must be untouched up to here. */
+	mrs	x9, sctlr_el1
+	mov	x10, #5			/* M | C */
+	orr	x9, x9, x10
+	msr	sctlr_el1, x9
+	isb
+	ret
+#endif
+#ifdef CANARY7
+	/* Reset the way BL31's plat_gs_system_reset does, but through the
+	 * EL3 PRIV_REG service and without its notify loop/spinlock (the
+	 * likely stall in CANARY5/6): mode := bootloader, then PS_HOLD low
+	 * (PMU+0x3e9c bit 8; cold, PMIC restarts: the PIN|PO resets that
+	 * always came back to fastboot), then SWRESET (PMU+0x3a00 = 2),
+	 * then PSCI. */
+	movz	x0, #0x0504
+	movk	x0, #0x8200, lsl #16	/* SMC_CMD_PRIV_REG */
+	movz	x1, #0x0810
+	movk	x1, #0x1546, lsl #16	/* PMU + SYSIP_DAT0 */
+	mov	x2, #1			/* write */
+	mov	x3, #0xfc		/* REBOOT_MODE_BOOTLOADER */
+	mov	x4, #0
+	smc	#0
+	movz	x0, #0x0504
+	movk	x0, #0x8200, lsl #16
+	movz	x1, #0x3e9c
+	movk	x1, #0x1546, lsl #16	/* PMU + PS_HOLD control */
+	mov	x2, #2			/* read-modify-write */
+	mov	x3, #0x100		/* mask: bit 8 */
+	mov	x4, #0			/* value: low */
+	smc	#0
+	movz	x0, #0x0504
+	movk	x0, #0x8200, lsl #16
+	movz	x1, #0x3a00
+	movk	x1, #0x1546, lsl #16	/* PMU + SWRESET */
+	mov	x2, #1
+	mov	x3, #2
+	mov	x4, #0
+	smc	#0
+	movz	x0, #0x0009
+	movk	x0, #0x8400, lsl #16	/* PSCI SYSTEM_RESET */
+	smc	#0
+	b	.
+#endif
+#ifdef CANARY6
+	/* Reset ladder. Reboot mode := bootloader first, so whichever
+	 * reset fires (incl. ABL's armed watchdog) should land in fastboot.
+	 * Then PSCI SYSTEM_RESET, SYSTEM_RESET2(warm), PMU SWRESET via EL3
+	 * PRIV_REG; then spin for the watchdog. RST_STAT / "Reboot reason"
+	 * in the next `fastboot oem dmesg` tell which one worked. */
+	movz	x0, #0x0504
+	movk	x0, #0x8200, lsl #16	/* SMC_CMD_PRIV_REG */
+	movz	x1, #0x0810
+	movk	x1, #0x1546, lsl #16	/* PMU + SYSIP_DAT0 */
+	mov	x2, #1
+	mov	x3, #0xfc		/* REBOOT_MODE_BOOTLOADER */
+	mov	x4, #0
+	smc	#0
+	movz	x0, #0x0009
+	movk	x0, #0x8400, lsl #16	/* PSCI SYSTEM_RESET */
+	mov	x1, #0
+	mov	x2, #0
+	mov	x3, #0
+	smc	#0
+	movz	x0, #0x0012
+	movk	x0, #0xc400, lsl #16	/* PSCI SYSTEM_RESET2 */
+	mov	x1, #0			/* SYSTEM_WARM_RESET */
+	mov	x2, #0
+	smc	#0
+	movz	x0, #0x0504
+	movk	x0, #0x8200, lsl #16	/* SMC_CMD_PRIV_REG */
+	movz	x1, #0x3a00
+	movk	x1, #0x1546, lsl #16	/* PMU + SWRESET (gs101 syscon-reboot) */
+	mov	x2, #1
+	mov	x3, #2
+	mov	x4, #0
+	smc	#0
+	b	.
+#endif
 #ifdef CANARY5
 	/* Canary: reboot mode := normal (SYSIP_DAT0 via EL3 PRIV_REG
 	 * write), then reset. Landing in Android instead of fastboot

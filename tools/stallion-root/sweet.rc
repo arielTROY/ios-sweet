@@ -1,0 +1,12 @@
+# Magisk overlay.d init script (ios-sweet stallion debug host).
+# User-approved 2026-10-19 (option 1: headless root). Grants `su` to the
+# adb shell user (uid 2000) without the on-screen prompt, so bring-up can
+# run unattended. Revert: flash the stock init_boot.img.
+on property:sys.boot_completed=1
+    start sweetroot
+
+service sweetroot /system/bin/sh ${MAGISKTMP}/sweetroot.sh
+    user root
+    seclabel u:r:magisk:s0
+    oneshot
+    disabled

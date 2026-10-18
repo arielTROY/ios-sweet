@@ -17,7 +17,12 @@ Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dme
   the bootloader-armed CPU watchdog fired instead ("APC Watchdog Early", RST_STAT 0x1
   CLUSTER0_NONCPU_WDTRESET, reason 0xcbea). ABL leaves WDT cl0/cl1 armed at handoff unless
   `fastboot oem watchdog disable` was set.
-- **DANGER:** after that watchdog reset the phone sat on the Google logo until the user
+- **RESOLVED 2026-10-19:** the logo stalls were NOT caused by our code: `boot_a` on flash was
+  not stock (AVB `avb_error_parts=boot` on a plain normal boot; probably flashed by an earlier
+  session). Normal boot ran it, hung, WDT, repeat. Fixed with `fastboot flash boot_a
+  research/stallion-fw/boot.img` (factory, sha256 8a85344a...); Android normal-boots in 29 s.
+  ABL's armed watchdog is therefore a safe net: hang -> WDT -> Android -> adb.
+- (superseded) **DANGER:** after that watchdog reset the phone sat on the Google logo until the user
   long-pressed power (reason 0xcccc). Watchdog resets are therefore NOT a safe net, and a
   working software reset is not yet known. The first milestone-A image also froze on the logo.
   Do not boot anything new on the phone until a reset path is proven offline.
