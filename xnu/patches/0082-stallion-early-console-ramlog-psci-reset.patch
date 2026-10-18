@@ -1,0 +1,893 @@
+stallion milestone 1: board-neutral early console, RAM log, PSCI reset
+
+One SWEET kernel for both phones. Board facts now come from the loader at
+run time instead of sweet constants:
+
+- Early framebuffer = boot_args->Video (the shim fills it; v_baseAddr 0 =
+  none). start.s draws the stage-0 band and maps the 32MB block holding
+  v_baseAddr only when there is one (and only into a free V=P slot);
+  sweet_early.c takes width/height/stride from boot_args. sweet's shim
+  passes 0x9c000000 1080x2400 as before, so sweet behaves as before.
+- RAM log: ADT /sweet-ramlog reg = <phys size> is a Linux ramoops
+  persistent RAM zone (sig 0x43474244, start, size, data). The early console
+  appends there too: VA=PA Device block in the bootstrap tables right after
+  PE_init_platform (earlier output is replayed from a 4K buffer), a kernel
+  VA alias across arm_vm_init (VM_MIN_KERNEL_ADDRESS + 2 * 32MB, next to the
+  framebuffer alias), then a permanent ml_io_map + serial device
+  (SERIAL_SWEET_RAMLOG) so kprintf/console output keeps going there.
+  It continues after the text the shim left (shim writes start = 0).
+  stallion: ramoops console zone 0xfd3ff000 + 0x200000, read back from
+  Android as /sys/fs/pstore/console-ramoops-0 after a warm reset.
+- Reset policy from ADT /chosen (boot-args override):
+  sweet-panic-reset (ms, sweetpanicreset=): panic_spin_forever and
+  halt_all_cpus end in PSCI SYSTEM_RESET (smc 0x84000009) after the delay;
+  sweet-reset-after (s, sweetreset=): unconditional PSCI reset that long
+  after SweetPlatformExpert::start (hang watchdog, thread call).
+  Neither property exists in sweet's ADT: sweet still spins on panic.
+
+--- a/osfmk/arm64/sweet_early.c
++++ b/osfmk/arm64/sweet_early.c
+@@ -1,50 +1,306 @@
+ /*
+- * Redmi Note 10 Pro bootstrap console. No allocation, locks, ADT parsing or
+- * per-CPU state: panic() can reach this before a current thread exists.
+- * start.s maps the splash framebuffer VA=PA as Normal Non-Cacheable memory.
+- * arm_vm_init installs a reserved kernel VA alias before removing TTBR0;
+- * retain this console until the normal framebuffer serial console is ready.
++ * SWEET bootstrap console. No allocation, locks or per-CPU state: panic()
++ * can reach this before a current thread exists.
++ *
++ * Two sinks, both optional and both described by the loader (shim), never
++ * by compile-time board constants, so one kernel serves every SWEET board
++ * (Redmi Note 10 Pro "sweet", Pixel 10a "stallion"):
++ *
++ *  1. Framebuffer: boot_args->Video (v_baseAddr 0 = none). start.s maps the
++ *     32MB block holding v_baseAddr VA=PA as Normal Non-Cacheable memory.
++ *  2. RAM log: ADT node /sweet-ramlog, reg = <phys size>, a Linux ramoops
++ *     "persistent RAM zone" (fs/pstore/ram_core.c, no ECC):
++ *       u32 sig = 0x43474244, u32 start (write offset), u32 size, u8 data[]
++ *     Android's pstore shows its previous contents after the next warm boot
++ *     as /sys/fs/pstore/console-ramoops-0. Mapped VA=PA (Device) into the
++ *     bootstrap tables by sweet_early_attach() once the ADT is readable;
++ *     output before that is kept in a small history buffer and replayed.
++ *
++ * arm_vm_init installs reserved kernel VA aliases for both before removing
++ * TTBR0 (sweet_early_relocate). serial_init later registers the RAM log as
++ * a serial device (pe_serial.c) that writes through sweet_ramlog_putc().
++ *
++ * Panic/hang policy (ADT /chosen, boot-args override):
++ *   sweet-panic-reset  (u32 ms, boot-arg sweetpanicreset): panic paths end in
++ *                      PSCI SYSTEM_RESET after this delay instead of spinning.
++ *   sweet-reset-after  (u32 s, boot-arg sweetreset): unconditional PSCI
++ *                      SYSTEM_RESET this long after IOKit platform start.
+  */
+ #include <arm64/sweet_early.h>
+ 
+ #if defined(SWEET)
+ #include <stdint.h>
++#include <stddef.h>
++#include <stdbool.h>
++#include <mach/vm_param.h>
+ #include <kern/misc_protos.h>
+-
+-static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)0x9c000000;
+-#define EARLY_FB early_fb
+-#define EARLY_WIDTH 1080u
+-#define EARLY_HEIGHT 2400u
+-#define EARLY_STRIDE (4320u / 4)
++#include <kern/clock.h>
++#include <kern/thread_call.h>
++#include <arm64/proc_reg.h>
++#include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
++#include <pexpert/arm64/boot.h>
++
++/* start.s reads boot_args->Video with these literal offsets. */
++_Static_assert(offsetof(boot_args, Video) + offsetof(Boot_Video, v_baseAddr) == SWEET_BA_VIDEO_BASE, "boot_args layout");
++_Static_assert(offsetof(boot_args, Video) + offsetof(Boot_Video, v_rowBytes) == SWEET_BA_VIDEO_ROWBYTES, "boot_args layout");
++_Static_assert(offsetof(boot_args, Video) + offsetof(Boot_Video, v_height) == SWEET_BA_VIDEO_HEIGHT, "boot_args layout");
++
+ #define EARLY_SCALE 2u
+ #define EARLY_CELL_W (8u * EARLY_SCALE)
+ #define EARLY_CELL_H (16u * EARLY_SCALE)
+-#define EARLY_ROWS ((EARLY_HEIGHT - 32u) / EARLY_CELL_H)
+-#define EARLY_COLS (EARLY_WIDTH / EARLY_CELL_W)
++#define EARLY_BAND_H 32u
+ 
+ extern unsigned char iso_font[256 * 16];
+ 
+ /* Initialized data must remain writable until disable, including panics. */
++static volatile uint32_t *early_fb;     /* NULL: no framebuffer sink */
++static uint64_t early_fb_pa;
++static unsigned int early_width, early_height, early_stride;   /* stride in pixels */
++static unsigned int early_rows, early_cols;
+ static unsigned int early_row, early_col;
+ static unsigned int early_started, early_disabled, early_panicking;
+ 
++/* RAM log (ramoops persistent RAM zone) */
++#define PRZ_SIG 0x43474244u
++#define PRZ_HDR 12u
++static volatile uint8_t *ramlog;        /* NULL: not mapped (yet) */
++static uint64_t ramlog_pa, ramlog_cap;
++static char early_hist[4096];           /* output before the RAM log was mapped */
++static unsigned int early_hist_len;
++
++/* Panic / hang reset policy */
++static uint32_t sweet_panic_reset_ms;   /* 0: panics spin as before */
++static uint32_t sweet_reset_after_s;
++static uint32_t sweet_resetting;
++
++/* ------------------------------------------------------------------------ */
++/* RAM log */
++
++static void
++ramlog_put_raw(uint8_t c)
++{
++	volatile uint32_t *hdr = (volatile uint32_t *)ramlog;
++	uint32_t start = hdr[1], size = hdr[2];
++	if (start >= ramlog_cap) {
++		start = 0;
++	}
++	ramlog[PRZ_HDR + start] = c;
++	start = (uint32_t)((start + 1) % ramlog_cap);
++	if (size < ramlog_cap) {
++		size++;
++	}
++	hdr[1] = start;
++	hdr[2] = size;
++}
++
++void
++sweet_ramlog_putc(char c)
++{
++	if (ramlog == NULL) {
++		if (early_hist_len < sizeof(early_hist)) {
++			early_hist[early_hist_len++] = c;
++		}
++		return;
++	}
++	ramlog_put_raw((uint8_t)c);
++}
++
++static void
++ramlog_puts(const char *s)
++{
++	while (*s) {
++		sweet_ramlog_putc(*s++);
++	}
++}
++
++/* Point the writer at a mapping of the zone; adopt or (re)initialize it. */
++static void
++ramlog_set_base(volatile uint8_t *base, bool replay)
++{
++	volatile uint32_t *hdr = (volatile uint32_t *)base;
++	if (hdr[0] != PRZ_SIG || hdr[1] >= ramlog_cap || hdr[2] > ramlog_cap) {
++		/* Not a zone the shim (or Linux) left: start a fresh one. */
++		hdr[0] = PRZ_SIG;
++		hdr[1] = 0;
++		hdr[2] = 0;
++	} else if (hdr[2] < ramlog_cap && hdr[1] != hdr[2]) {
++		/* The shim writes linearly with start = 0; Linux keeps start == size
++		 * until the zone wraps. Append after the shim's text. */
++		hdr[1] = hdr[2];
++	}
++	ramlog = base;
++	if (replay) {
++		ramlog_puts("\n--- SWEET XNU RAM log ---\n");
++		for (unsigned int i = 0; i < early_hist_len; i++) {
++			ramlog_put_raw((uint8_t)early_hist[i]);
++		}
++	}
++	__asm__ volatile("dsb sy" ::: "memory");
++}
++
++/* Bootstrap V=P L2 table: page 2 of bootstrap_pagetables (see start.s). */
++extern uint8_t bootstrap_pagetables[];
++
++static volatile uint64_t *
++sweet_early_vp_slot(uint64_t pa)
++{
++	volatile uint64_t *l2 = (volatile uint64_t *)(void *)(bootstrap_pagetables + 2 * ARM_PGBYTES);
++	return &l2[(pa & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT];
++}
++
++static uint64_t
++sweet_early_block_tte(uint64_t pa, unsigned int attrindx)
++{
++	return (pa & ~(uint64_t)ARM_TT_L2_OFFMASK) | ARM_TTE_VALID | ARM_TTE_TYPE_BLOCK |
++	       ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) | ARM_TTE_BLOCK_ATTRINDX(attrindx) |
++	       ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX;
++}
++
++/* start.s mapped this block (same V=P L1 entry as the kernel, our TTE)? */
++static bool
++sweet_early_vp_block_is(uint64_t pa, unsigned int attrindx)
++{
++	return *sweet_early_vp_slot(pa) == sweet_early_block_tte(pa, attrindx);
++}
++
++static bool
++sweet_early_map_vp_block(uint64_t pa, boot_args *args)
++{
++	if ((pa >> ARM_TT_L1_SHIFT) != (args->topOfKernelData >> ARM_TT_L1_SHIFT)) {
++		return false;   /* another V=P L1 entry: no L2 table there */
++	}
++	volatile uint64_t *slot = sweet_early_vp_slot(pa);
++	if (*slot != ARM_TTE_EMPTY) {
++		return false;   /* RAM or the framebuffer already uses this block */
++	}
++	*slot = sweet_early_block_tte(pa, CACHE_ATTRINDX_DISABLE);
++	__asm__ volatile("dsb ish; isb" ::: "memory");
++	return true;
++}
++
++static uint32_t
++chosen_u32(const char *prop, const char *bootarg, uint32_t dflt)
++{
++	uint32_t v = dflt;
++	DTEntry chosen;
++	void const *p;
++	unsigned int size;
++	if (SecureDTLookupEntry(NULL, "/chosen", &chosen) == kSuccess &&
++	    SecureDTGetProperty(chosen, prop, &p, &size) == kSuccess && size == sizeof(uint32_t)) {
++		v = *(const uint32_t *)p;
++	}
++	PE_parse_boot_argn(bootarg, &v, sizeof(v));
++	return v;
++}
++
++/* After PE_init_platform: the ADT and boot-args are readable. */
++void
++sweet_early_attach(boot_args *args)
++{
++	DTEntry entry;
++	uint64_t const *reg;
++	unsigned int size;
++
++	sweet_panic_reset_ms = chosen_u32("sweet-panic-reset", "sweetpanicreset", 0);
++	sweet_reset_after_s = chosen_u32("sweet-reset-after", "sweetreset", 0);
++
++	if (SecureDTLookupEntry(NULL, "/sweet-ramlog", &entry) != kSuccess ||
++	    SecureDTGetProperty(entry, "reg", (void const **)&reg, &size) != kSuccess ||
++	    size < 2 * sizeof(uint64_t) || reg[1] <= PRZ_HDR) {
++		return;
++	}
++	uint64_t pa = reg[0], len = reg[1];
++	/* One 32MB block, VA=PA, must hold the whole zone. */
++	if ((pa & ~(uint64_t)ARM_TT_L2_OFFMASK) != ((pa + len - 1) & ~(uint64_t)ARM_TT_L2_OFFMASK)) {
++		return;
++	}
++	ramlog_pa = pa;
++	ramlog_cap = len - PRZ_HDR;
++	if (sweet_early_map_vp_block(pa, args)) {
++		ramlog_set_base((volatile uint8_t *)(uintptr_t)pa, true);
++	}
++}
++
++uint64_t
++sweet_early_fb_block(void)
++{
++	return early_fb ? (early_fb_pa & ~(uint64_t)ARM_TT_L2_OFFMASK) : 0;
++}
++
++uint64_t
++sweet_early_ramlog_block(void)
++{
++	return ramlog_pa ? (ramlog_pa & ~(uint64_t)ARM_TT_L2_OFFMASK) : 0;
++}
++
++/* serial_init (pe_serial.c): permanent ml_io_map() of the zone. */
++bool
++sweet_ramlog_reg(uint64_t *pa, uint64_t *len)
++{
++	if (ramlog_pa == 0) {
++		return false;
++	}
++	*pa = ramlog_pa;
++	*len = ramlog_cap + PRZ_HDR;
++	return true;
++}
++
++void
++sweet_ramlog_attach_va(vm_offset_t va)
++{
++	ramlog_set_base((volatile uint8_t *)va, ramlog == NULL);
++}
++
++/* ------------------------------------------------------------------------ */
++/* Framebuffer */
++
++/* arm_init entry, before anything else: geometry from the loader. */
++void
++sweet_early_setup(boot_args *args)
++{
++	uint64_t base = args->Video.v_baseAddr;
++	uint64_t stride = args->Video.v_rowBytes;
++	uint64_t w = args->Video.v_width, h = args->Video.v_height;
++
++	if (base == 0 || args->Video.v_depth != 32 || w < 64 || h <= EARLY_BAND_H ||
++	    stride < w * 4 || (stride & 3)) {
++		return;
++	}
++	/* Only the 32MB block start.s mapped is usable, if it mapped one. */
++	if (!sweet_early_vp_block_is(base, CACHE_ATTRINDX_WRITECOMB)) {
++		return;
++	}
++	uint64_t block_end = (base & ~(uint64_t)ARM_TT_L2_OFFMASK) + ARM_TT_L2_SIZE;
++	if (base + h * stride > block_end) {
++		h = (block_end - base) / stride;
++		if (h <= EARLY_BAND_H + EARLY_CELL_H) {
++			return;
++		}
++	}
++	early_fb_pa = base;
++	early_width = (unsigned int)w;
++	early_height = (unsigned int)h;
++	early_stride = (unsigned int)(stride / 4);
++	early_rows = (early_height - EARLY_BAND_H) / EARLY_CELL_H;
++	early_cols = early_width / EARLY_CELL_W;
++	early_fb = (volatile uint32_t *)(uintptr_t)base;
++}
++
+ static void
+ sweet_early_clear_row(void)
+ {
+ 	for (unsigned int y = 0; y < EARLY_CELL_H; y++) {
+-		volatile uint32_t *line = EARLY_FB + (early_row * EARLY_CELL_H + y) * EARLY_STRIDE;
+-		for (unsigned int x = 0; x < EARLY_WIDTH; x++) {
++		volatile uint32_t *line = early_fb + (early_row * EARLY_CELL_H + y) * early_stride;
++		for (unsigned int x = 0; x < early_width; x++) {
+ 			line[x] = 0xff000000u;
+ 		}
+ 	}
+ }
+ 
+-void
+-sweet_early_putc(char c)
+-{
+-	if (early_disabled) {
+-		return;
+-	}
++static void
++sweet_early_fb_putc(char c)
++{
+ 	if (!early_started) {
+ 		early_started = 1;
+ 		sweet_early_clear_row();
+@@ -53,9 +309,9 @@
+ 		early_col = 0;
+ 		return;
+ 	}
+-	if (c == '\n' || early_col == EARLY_COLS) {
++	if (c == '\n' || early_col == early_cols) {
+ 		early_col = 0;
+-		early_row = (early_row + 1) % EARLY_ROWS;
++		early_row = (early_row + 1) % early_rows;
+ 		sweet_early_clear_row();
+ 		if (c == '\n') {
+ 			return;
+@@ -64,8 +320,8 @@
+ 	const unsigned char *glyph = iso_font + (unsigned char)c * 16;
+ 	for (unsigned int gy = 0; gy < 16; gy++) {
+ 		for (unsigned int sy = 0; sy < EARLY_SCALE; sy++) {
+-			volatile uint32_t *line = EARLY_FB +
+-			    (early_row * EARLY_CELL_H + gy * EARLY_SCALE + sy) * EARLY_STRIDE +
++			volatile uint32_t *line = early_fb +
++			    (early_row * EARLY_CELL_H + gy * EARLY_SCALE + sy) * early_stride +
+ 			    early_col * EARLY_CELL_W;
+ 			for (unsigned int gx = 0; gx < 8; gx++) {
+ 				uint32_t pixel = (glyph[gy] & (1u << gx)) ? 0xffffffffu : 0xff000000u;
+@@ -78,6 +334,18 @@
+ 	early_col++;
+ }
+ 
++void
++sweet_early_putc(char c)
++{
++	if (early_disabled) {
++		return;
++	}
++	if (early_fb != NULL) {
++		sweet_early_fb_putc(c);
++	}
++	sweet_ramlog_putc(c);
++}
++
+ static void
+ sweet_early_string(const char *s)
+ {
+@@ -92,10 +360,12 @@
+ 	if (early_disabled || stage > 20) {
+ 		return;
+ 	}
+-	uint32_t color = 0xff00ff00u | ((stage & 7u) * 32u << 16);
+-	for (unsigned int y = EARLY_HEIGHT - 32; y < EARLY_HEIGHT; y++) {
+-		for (unsigned int x = stage * 48; x < (stage + 1) * 48; x++) {
+-			EARLY_FB[y * EARLY_STRIDE + x] = color;
++	if (early_fb != NULL) {
++		uint32_t color = 0xff00ff00u | ((stage & 7u) * 32u << 16);
++		for (unsigned int y = early_height - EARLY_BAND_H; y < early_height; y++) {
++			for (unsigned int x = stage * 48; x < (stage + 1) * 48 && x < early_width; x++) {
++				early_fb[y * early_stride + x] = color;
++			}
+ 		}
+ 	}
+ 	__asm__ volatile("dsb sy" ::: "memory");
+@@ -125,11 +395,27 @@
+ 	__asm__ volatile("dsb sy" ::: "memory");
+ }
+ 
+-void
+-sweet_early_relocate(uint64_t base)
++/*
++ * arm_vm_init: the final TTBR1 is live and maps fb_block_va / log_block_va
++ * (0 = that alias could not be installed) to the blocks returned by
++ * sweet_early_fb_block() / sweet_early_ramlog_block().
++ */
++void
++sweet_early_relocate(uint64_t fb_block_va, uint64_t log_block_va)
+ {
+ 	sweet_early_mark(8, "leaving bootstrap TTBR0");
+-	early_fb = (volatile uint32_t *)(uintptr_t)base;
++	if (early_fb != NULL) {
++		early_fb = fb_block_va ?
++		    (volatile uint32_t *)(uintptr_t)(fb_block_va + (early_fb_pa & ARM_TT_L2_OFFMASK)) : NULL;
++	}
++	if (ramlog_pa != 0 && log_block_va != 0) {
++		ramlog_set_base((volatile uint8_t *)(uintptr_t)(log_block_va + (ramlog_pa & ARM_TT_L2_OFFMASK)),
++		    ramlog == NULL);
++	} else if (ramlog != NULL) {
++		/* VA=PA goes away: buffer again until serial_init maps the zone. */
++		ramlog = NULL;
++		early_hist_len = 0;
++	}
+ 	__asm__ volatile("dsb sy" ::: "memory");
+ 	sweet_early_mark(9, "kernel framebuffer VA live");
+ }
+@@ -140,4 +426,76 @@
+ 	early_disabled = 1;
+ 	__asm__ volatile("dsb sy" ::: "memory");
+ }
++
++/* ------------------------------------------------------------------------ */
++/* PSCI SYSTEM_RESET */
++
++static void
++sweet_delay_ms(uint32_t ms)
++{
++	uint64_t freq = __builtin_arm_rsr64("CNTFRQ_EL0");
++	if (freq == 0) {
++		freq = 24000000;
++	}
++	uint64_t end = __builtin_arm_rsr64("CNTVCT_EL0") + freq / 1000 * ms;
++	while (__builtin_arm_rsr64("CNTVCT_EL0") < end) {
++		__asm__ volatile("yield");
++	}
++}
++
++static void
++sweet_psci_system_reset(void)
++{
++	/* SMCCC: PSCI 0.2+ SYSTEM_RESET, function id 0x84000009, no arguments. */
++	register uint64_t x0 __asm__("x0") = 0x84000009ULL;
++	__asm__ volatile("smc #0" : "+r"(x0) : :
++	    "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
++	    "x12", "x13", "x14", "x15", "x16", "x17", "cc", "memory");
++}
++
++static void
++sweet_reset_now(const char *why, uint32_t delay_ms)
++{
++	if (__atomic_exchange_n(&sweet_resetting, 1, __ATOMIC_ACQ_REL)) {
++		return; /* another CPU is already resetting; let the caller spin */
++	}
++	ramlog_puts("\nSWEET: ");
++	ramlog_puts(why);
++	ramlog_puts(": PSCI SYSTEM_RESET\n");
++	__asm__ volatile("dsb sy" ::: "memory");
++	sweet_delay_ms(delay_ms);
++	sweet_psci_system_reset();
++	ramlog_puts("SWEET: PSCI SYSTEM_RESET returned\n");
++}
++
++/* panic_spin_forever / halt_all_cpus: never hang a board that asked for it. */
++void
++sweet_panic_reset(void)
++{
++	if (sweet_panic_reset_ms != 0) {
++		sweet_reset_now("panic", sweet_panic_reset_ms);
++	}
++}
++
++static void
++sweet_reset_watchdog_fire(thread_call_param_t p0 __unused, thread_call_param_t p1 __unused)
++{
++	kprintf("SWEET: reset watchdog (%u s) fired\n", sweet_reset_after_s);
++	sweet_reset_now("reset watchdog", 500);
++}
++
++/* SweetPlatformExpert::start: arm the hang watchdog (sweet-reset-after). */
++void
++sweet_reset_watchdog_start(void)
++{
++	if (sweet_reset_after_s == 0) {
++		return;
++	}
++	thread_call_t call = thread_call_allocate_with_priority(sweet_reset_watchdog_fire, NULL,
++	    THREAD_CALL_PRIORITY_HIGH);
++	uint64_t deadline;
++	clock_interval_to_deadline(sweet_reset_after_s, NSEC_PER_SEC, &deadline);
++	thread_call_enter_delayed(call, deadline);
++	kprintf("SWEET: PSCI SYSTEM_RESET in %u s (sweetreset=0 disables)\n", sweet_reset_after_s);
++}
+ #endif /* SWEET */
+--- a/osfmk/arm64/sweet_early.h
++++ b/osfmk/arm64/sweet_early.h
+@@ -1,17 +1,29 @@
+-/* Screen diagnostics through bootstrap TTBR0 and the final kernel TTBR1. */
++/* Early diagnostics (framebuffer + RAM log) and SWEET reset policy. */
+ #ifndef _ARM64_SWEET_EARLY_H_
+ #define _ARM64_SWEET_EARLY_H_
+ 
+ #include <pexpert/arm64/board_config.h>
+ #include <stdarg.h>
+ #include <stdint.h>
++#include <stdbool.h>
++#include <mach/vm_types.h>
+ 
+ #if defined(SWEET)
++struct boot_args;
++void sweet_early_setup(struct boot_args *args);
++void sweet_early_attach(struct boot_args *args);
+ void sweet_early_mark(unsigned int stage, const char *label);
+ void sweet_early_putc(char c);
+ void sweet_early_panic(const char *fmt, va_list *args);
+-void sweet_early_relocate(uint64_t base);
++uint64_t sweet_early_fb_block(void);
++uint64_t sweet_early_ramlog_block(void);
++void sweet_early_relocate(uint64_t fb_block_va, uint64_t log_block_va);
+ void sweet_early_disable(void);
++bool sweet_ramlog_reg(uint64_t *pa, uint64_t *len);
++void sweet_ramlog_attach_va(vm_offset_t va);
++void sweet_ramlog_putc(char c);
++void sweet_panic_reset(void);
++void sweet_reset_watchdog_start(void);
+ #else
+ static inline void sweet_early_mark(unsigned int stage, const char *label)
+ {
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -514,11 +514,21 @@
+ 	mov		x21, #0
+ 
+ #if defined(SWEET)
+-	/* Stage 0: white 64x32 band, no stack or page tables needed. */
+-	MOV64	x0, (0x9c000000 + 2368 * 4320)
++	/*
++	 * Stage 0: white 64x32 band at the bottom of the loader's framebuffer
++	 * (boot_args->Video; v_baseAddr 0 = no framebuffer, e.g. stallion until
++	 * its ABL framebuffer is known). No stack or page tables needed.
++	 */
++	ldr		x0, [x20, #(SWEET_BA_VIDEO_BASE)]
++	cbz		x0, Lsweet_mark_done
++	ldr		x4, [x20, #(SWEET_BA_VIDEO_ROWBYTES)]
++	ldr		x2, [x20, #(SWEET_BA_VIDEO_HEIGHT)]
++	cmp		x2, #32
++	b.ls	Lsweet_mark_done
++	sub		x2, x2, #32
++	madd	x0, x2, x4, x0
+ 	mov		w1, #-1
+ 	mov		x2, #32
+-	mov		x4, #4320
+ Lsweet_mark_row:
+ 	mov		x3, #64
+ 	mov		x5, x0
+@@ -530,6 +540,7 @@
+ 	subs	x2, x2, #1
+ 	b.ne	Lsweet_mark_row
+ 	dsb		sy
++Lsweet_mark_done:
+ #endif
+ 
+ 	// Set low reset vector before attempting any loads
+@@ -680,19 +691,31 @@
+ 
+ #if defined(SWEET)
+ 	/*
+-	 * Splash framebuffer: one 32MB Normal-NC block in the EXISTING V=P
+-	 * L2 table. Both framebuffer and RAM use L1 index 0; another call to
+-	 * create_bootstrap_mapping would replace the RAM L2 table.
+-	 * SWEET uses 16K pages and all bring-up RAM is below 4GB, so the first
+-	 * V=P L2 page is bootstrap_pagetables + 2*PGBYTES.
+-	 */
+-	MOV64	x10, 0x9c000000
+-	MOV64	x11, (ARM_TTE_TYPE_BLOCK | ARM_TTE_VALID | ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) | ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) | ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX)
+-	orr		x11, x11, x10
++	 * Loader framebuffer (boot_args->Video): the 32MB block holding
++	 * v_baseAddr as one Normal-NC block in the EXISTING V=P L2 table.
++	 * Framebuffer and RAM must share the V=P L1 entry (64GB with 16K
++	 * pages); another call to create_bootstrap_mapping would replace the
++	 * RAM L2 table. The first V=P L2 page is bootstrap_pagetables +
++	 * 2*PGBYTES. A slot that RAM already maps is left alone (and
++	 * sweet_early_setup then finds no framebuffer block there).
++	 */
++	ldr		x10, [x20, #(SWEET_BA_VIDEO_BASE)]
++	cbz		x10, Lsweet_fb_map_done
++	lsr		x10, x10, #(ARM_TT_L2_SHIFT)
++	lsl		x10, x10, #(ARM_TT_L2_SHIFT)
++	lsr		x11, x10, #(ARM_TT_L1_SHIFT)
++	lsr		x12, x23, #(ARM_TT_L1_SHIFT)
++	cmp		x11, x12
++	b.ne	Lsweet_fb_map_done
+ 	and		x12, x10, #(ARM_TT_L2_INDEX_MASK)
+ 	lsr		x12, x12, #(ARM_TT_L2_SHIFT)
+ 	add		x13, x25, #(2 * PGBYTES)
++	ldr		x9, [x13, x12, lsl #TTE_SHIFT]
++	cbnz	x9, Lsweet_fb_map_done
++	MOV64	x11, (ARM_TTE_TYPE_BLOCK | ARM_TTE_VALID | ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) | ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) | ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX)
++	orr		x11, x11, x10
+ 	str		x11, [x13, x12, lsl #TTE_SHIFT]
++Lsweet_fb_map_done:
+ #endif
+ 
+ 	/* Ensure TTEs are visible */
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -1828,26 +1828,45 @@
+ #if defined(SWEET)
+ /*
+  * The reserved low-globals/kernel region is excluded from VM allocation.
+- * Use the otherwise empty 32MB block above low globals and below gVirtBase
+- * for a Normal-NC framebuffer alias that survives bootstrap TTBR0 teardown.
+- */
+-#define SWEET_EARLY_FB_VA (VM_MIN_KERNEL_ADDRESS + ARM_TT_L2_SIZE)
++ * Use the otherwise empty 32MB blocks above low globals and below gVirtBase
++ * for the early framebuffer (Normal-NC) and RAM log (Device) aliases that
++ * survive bootstrap TTBR0 teardown. A slot that is not free stays unused.
++ */
++#define SWEET_EARLY_FB_VA     (VM_MIN_KERNEL_ADDRESS + ARM_TT_L2_SIZE)
++#define SWEET_EARLY_RAMLOG_VA (VM_MIN_KERNEL_ADDRESS + 2 * ARM_TT_L2_SIZE)
++
++static vm_map_address_t
++sweet_early_map_block(vm_map_address_t va, uint64_t pa, unsigned int attrindx)
++{
++	if (pa == 0 || va + ARM_TT_L2_SIZE > gVirtBase) {
++		return 0;
++	}
++	tt_entry_t l1 = cpu_tte[(va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT];
++	if ((l1 & (ARM_TTE_VALID | ARM_TTE_TYPE_MASK)) != (ARM_TTE_VALID | ARM_TTE_TYPE_TABLE)) {
++		return 0;
++	}
++	tt_entry_t *l2 = (tt_entry_t *)phystokv(l1 & ARM_TTE_TABLE_MASK);
++	tt_entry_t *slot = &l2[(va & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT];
++	if (*slot != ARM_TTE_EMPTY) {
++		return 0;
++	}
++	*slot = pa | ARM_TTE_VALID | ARM_TTE_TYPE_BLOCK |
++	    ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) |
++	    ARM_TTE_BLOCK_ATTRINDX(attrindx) |
++	    ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX;
++	__asm__ volatile("dsb ishst" ::: "memory");
++	return va;
++}
++
++static vm_map_address_t sweet_early_fb_va, sweet_early_ramlog_va;
+ 
+ static void
+ sweet_early_map_final(void)
+ {
+-	const vm_map_address_t va = SWEET_EARLY_FB_VA;
+-	assert(va + ARM_TT_L2_SIZE <= gVirtBase);
+-	tt_entry_t l1 = cpu_tte[(va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT];
+-	assert((l1 & (ARM_TTE_VALID | ARM_TTE_TYPE_MASK)) == (ARM_TTE_VALID | ARM_TTE_TYPE_TABLE));
+-	tt_entry_t *l2 = (tt_entry_t *)phystokv(l1 & ARM_TTE_TABLE_MASK);
+-	tt_entry_t *slot = &l2[(va & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT];
+-	assert(*slot == ARM_TTE_EMPTY);
+-	*slot = 0x9c000000ULL | ARM_TTE_VALID | ARM_TTE_TYPE_BLOCK |
+-	    ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) |
+-	    ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) |
+-	    ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX;
+-	__asm__ volatile("dsb ishst" ::: "memory");
++	sweet_early_fb_va = sweet_early_map_block(SWEET_EARLY_FB_VA,
++	    sweet_early_fb_block(), CACHE_ATTRINDX_WRITECOMB);
++	sweet_early_ramlog_va = sweet_early_map_block(SWEET_EARLY_RAMLOG_VA,
++	    sweet_early_ramlog_block(), CACHE_ATTRINDX_DISABLE);
+ }
+ #endif
+ 
+@@ -2190,7 +2209,7 @@
+ 
+ #if defined(SWEET)
+ 	/* The final TTBR1 is live; leave the outgoing VA=PA framebuffer alias. */
+-	sweet_early_relocate(SWEET_EARLY_FB_VA);
++	sweet_early_relocate(sweet_early_fb_va, sweet_early_ramlog_va);
+ #endif
+ 	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
+ 
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -347,6 +347,10 @@
+ 	DTEntry chosen = NULL;
+ 	unsigned int dt_entry_size = 0;
+ 
++#if defined(SWEET)
++	/* Framebuffer geometry from the loader (boot_args->Video), if any. */
++	sweet_early_setup(args);
++#endif
+ 	sweet_early_mark(1, "arm_init entered (MMU on)");
+ 
+ 	arm_setup_pre_sign();
+@@ -365,6 +369,10 @@
+ #endif /* defined(HAS_APPLE_PAC) */
+ 
+ 	PE_init_platform(FALSE, args); /* Get platform expert set up */
++#if defined(SWEET)
++	/* ADT readable: RAM log (/sweet-ramlog) and panic reset policy. */
++	sweet_early_attach(args);
++#endif
+ 	sweet_early_mark(2, "PE_init_platform done");
+ 
+ #if __arm64__
+--- a/osfmk/kern/debug.c
++++ b/osfmk/kern/debug.c
+@@ -1158,6 +1158,10 @@
+ void
+ panic_spin_forever(void)
+ {
++#if defined(SWEET)
++	/* Boards without a debugger cable (stallion): reset instead of hanging. */
++	sweet_panic_reset();
++#endif
+ 	for (;;) {
+ #if defined(__arm__) || defined(__arm64__)
+ 		/* On arm32, which doesn't have a WFE timeout, this may not return.  But that should be OK on this path. */
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -753,6 +753,11 @@
+ 		printf("CPU halted\n");
+ 		PEHaltRestart(kPEHaltCPU);
+ 	}
++#if defined(SWEET)
++	/* No platform reset driver: PSCI SYSTEM_RESET if the ADT asks for it. */
++	extern void sweet_panic_reset(void);
++	sweet_panic_reset();
++#endif
+ 	while (1) {
+ 		;
+ 	}
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -842,6 +842,70 @@
+ 	}
+ }
+ 
++#if defined(SWEET)
++/*
++ * sweet: RAM log "serial" for boards without a UART cable or a known
++ * framebuffer (stallion). Every console/kprintf byte also goes into the
++ * ramoops persistent RAM zone described by /sweet-ramlog, which Android's
++ * pstore exposes as /sys/fs/pstore/console-ramoops-0 after a warm reset.
++ * The zone format and its early (pre-VM) writer live in
++ * osfmk/arm64/sweet_early.c; this only maps it for good.
++ */
++static void
++ramlog_init(void)
++{
++}
++
++static unsigned int
++ramlog_transmit_ready(void)
++{
++	return 1;
++}
++
++static void
++ramlog_transmit_data(uint8_t c)
++{
++	sweet_ramlog_putc((char)c);
++}
++
++static unsigned int
++ramlog_receive_ready(void)
++{
++	return 0;
++}
++
++static uint8_t
++ramlog_receive_data(void)
++{
++	return 0;
++}
++
++SECURITY_READ_ONLY_LATE(static struct pe_serial_functions) sweet_ramlog_serial_functions =
++{
++	.init = ramlog_init,
++	.transmit_ready = ramlog_transmit_ready,
++	.transmit_data = ramlog_transmit_data,
++	.receive_ready = ramlog_receive_ready,
++	.receive_data = ramlog_receive_data,
++	.device = SERIAL_SWEET_RAMLOG
++};
++
++static void
++ramlog_probe(void)
++{
++	uint64_t pa, len;
++
++	if (!sweet_ramlog_reg(&pa, &len)) {
++		return;
++	}
++	vm_offset_t va = ml_io_map(pa, len);
++	if (va != 0) {
++		sweet_ramlog_attach_va(va);
++		register_serial_functions(&sweet_ramlog_serial_functions);
++	}
++}
++#endif /* SWEET */
++
+ #if HIBERNATION
+ /**
+  * Transitions the serial driver into a mode that can be run in the hibernation
+@@ -923,6 +987,9 @@
+ 	PE_parse_boot_argn("disable-uart-irq", &disable_uart_irq, sizeof(disable_uart_irq));
+ 
+ 	fbcon_probe();
++#if defined(SWEET)
++	ramlog_probe();
++#endif
+ 
+ #ifdef PI3_UART
+ 	if (SecureDTFindEntry("name", "gpio", &entryP) == kSuccess) {
+--- a/pexpert/pexpert/arm/protos.h
++++ b/pexpert/pexpert/arm/protos.h
+@@ -51,7 +51,8 @@
+ 	SERIAL_PI3_UART=0x4,
+ 	SERIAL_VMAPPLE_UART=0x8,
+ 	SERIAL_DCC_UART=0x10,
+-	SERIAL_SWEET_FBCON=0x20
++	SERIAL_SWEET_FBCON=0x20,
++	SERIAL_SWEET_RAMLOG=0x40
+ } serial_device_t;
+ 
+ kern_return_t serial_irq_enable(serial_device_t device);
+--- a/pexpert/pexpert/arm64/SWEET.h
++++ b/pexpert/pexpert/arm64/SWEET.h
+@@ -48,6 +48,17 @@
+  * (CNTV) is INTID 16 + 3 = 19.
+  */
+ #define SWEET_VTIMER_INTID        19
++
++/*
++ * One kernel for every SWEET board (sweet = SM7150, stallion = Pixel 10a /
++ * Tensor G4): board differences come from the loader at run time, never
++ * from this header. boot_args->Video gives the early framebuffer (0 = none;
++ * start.s reads it with these offsets, checked in sweet_early.c), the ADT
++ * gives GIC/timer/RAM log/reset policy (tools/mkadt.py --target).
++ */
++#define SWEET_BA_VIDEO_BASE       40      // boot_args.Video.v_baseAddr
++#define SWEET_BA_VIDEO_ROWBYTES   56      // boot_args.Video.v_rowBytes
++#define SWEET_BA_VIDEO_HEIGHT     72      // boot_args.Video.v_height
+ #define SWEET_IPI_SGI             1       // SGI used for cross-CPU signals
+ 
+ #define GIC_SPURIOUS_IRQ          1023    // IRQ no. for GIC spurious interrupt
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -9,6 +9,9 @@
+ #include <IOKit/IOPlatformExpert.h>
+ #include <IOKit/IODeviceTreeSupport.h>
+ #include <IOKit/IOLib.h>
++
++/* osfmk/arm64/sweet_early.c: ADT /chosen sweet-reset-after / boot-arg sweetreset */
++extern "C" void sweet_reset_watchdog_start(void);
+ 
+ class SweetPlatformExpert : public IODTPlatformExpert {
+ 	OSDeclareDefaultStructors(SweetPlatformExpert);
+@@ -31,6 +34,7 @@
+ 	}
+ 	registerService();
+ 	IOLog("SWEET: platform expert registered\n");
++	sweet_reset_watchdog_start();
+ 	return true;
+ }
+ 
