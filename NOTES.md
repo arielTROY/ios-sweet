@@ -18,11 +18,27 @@ regulators via ACPM mailbox + s2mpg PMIC (no RPMh/SPMI). ~40 of the 80 XNU
 patches (all Apple-compat work: AMFI/AKS/HFS+/HID ABI/identity/diagnostics)
 carry over unchanged.
 
-NEXT: clone the stallion kernel tree / extract DTB from `vendor_kernel_boot`
-to resolve every "verify" cell in STALLION-PORT.md, then shim Phase 0
-(UART + diagnostics). No device-specific code written yet — this commit is
-research + plan only. The sweet work below is untouched and remains the
-reference implementation.
+DONE since: stallion/zumapro DTS fetched into `research/stallion-dts/`
+(gitignored) — every "verify" cell resolved (see STALLION-PORT.md table).
+**Milestone A code landed (commit 0aaa373):** `shim/` builds for stallion via
+`TARGET_STALLION` + `shim/build-stallion.sh` -> `shim/out-st/shim-boot-st.img`
+(boot.img v4, tools/mkbootimgv4.py). Recon flow: find FB from live FDT ->
+fdt_dump -> UFS probe @0x13200000 -> PSCI -> GIC @0x10400000 -> SMP, then
+PSCI reset to Android. Log extraction without UART/root: every console line
+also goes to UART @0x10870000 and the ramoops console prz @0xfd3ff000
+(prz record: sig 0x43474244, start, size, data) — Android pstore exposes it
+at /sys/fs/pstore/console-ramoops-0 (0444, adb shell can cat it). EL2->EL1
+drop added in start.S. Loader scans after _end for an appended SWEETXNU
+payload (Pixel fastboot ignores ramdisk).
+`tools/stallion-run.sh` = the autonomous loop: adb recon pull -> reboot
+bootloader -> `fastboot boot` (nothing flashed) -> wait Android -> pull
+pstore -> logs/stallion-*/. User device: unlocked BL, adb enabled, regular
+USB cable (no UART), temporary boots only — approved overnight autonomy.
+
+NEXT: run tools/stallion-run.sh when the device is connected. Watch for:
+FB address in FDT (else DECON work), UFS link state, GIC SecurityExtn,
+whether `fastboot boot` reaches our Image at all, v4 kernel format acceptance
+(raw Image vs lz4).
 
 ### >>> UPDATE 2026-10-18 (read first, then the 10-17 handoff below) <<<
 
