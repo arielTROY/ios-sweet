@@ -26,27 +26,36 @@ session-by-session progress goes in `NOTES.md` as usual.
   LineageOS (`android_kernel_google_gs-6.1_devices`, stallion imported in
   commit cafda38), CalyxOS gitlab, GrapheneOS `17-stallion`.
 
-## Hardware address table (zuma/zumapro; verify against live DTB)
+## Hardware address table (extracted from stallion/zumapro DTS 2026-10-18)
 
-| Item | Address | Confidence |
+Sources: LineageOS `android_kernel_google_gs-6.1_devices` /
+`gs-6.6_devices` (lineage-24.0), `google/stallion/dts/` +
+`google/zumapro/dts/` + `google/zuma/dts/`; raw copies in
+`research/stallion-dts/` (gitignored), full table in
+`research/stallion-dts/EXTRACTED.md`.
+
+| Item | Address | Source |
 |---|---|---|
-| DRAM base | 0x80000000 | confirmed (family) |
-| Kernel load | ~0x80200000 | verify |
-| GICD | 0x10400000 (+0x10000) | gs101/zuma, near-certain |
-| GICR | 0x10440000 (+0x100000) | same |
-| Debug UART (USI) | 0x10870000 | confirmed BoardConfig |
-| UFS HCI | 0x13200000 | confirmed BoardConfig (`13200000.ufs`) |
-| PMU / PSHOLD | 0x17460000 + 0x3E9C | gs101; verify |
-| Bootloader FB | ~0xfac00000 a8r8g8b8 stride 4320 | gs101-confirmed, verify on stallion (1080x2424) |
-| DECON/DPU | 0x1C300000 region (cal_9845; zumapro=cal_9875 may differ) | verify |
-| Touch | FocalTech FT3683U on **SPI** (spi_20 USI), rails VLDO25M 1.8V / VLDO4M 3.3V, reset GPP1[1], irq GPN0[0] | confirmed stallion dtsi |
-| Buttons | gpio-keys EINT (VolDn GPA7[3], VolUp GPA8[1], Power GPA10[1] on gs101) | verify pins |
-| USB | DWC3 `usbdrd31` + combo phy in HSI0 block | address unverified |
-| Regulators | s2mpg14/15 PMIC behind ACPM mailbox I2C (`acpm_ipc`) | confirmed |
+| DRAM base | `memory@80000000`, 2 GB in first bank node (8 GB total; more bank nodes exist) | zumapro.dtsi |
+| Reserved mem | 22 carve-outs: gsa 0x90200000, aoc 0x94000000, modem cp_rmem 0xEA400000/0xE8000000, seclog 0xC3000000, ramoops 0xfd3ff000, ... | zumapro-rmem.dtsi |
+| GICD | 0x10400000 + 0x10000 (GIC-600 class, v3) | zumapro.dtsi |
+| GICR | 0x10440000 + 0x200000 (8x 0x20000) | zumapro.dtsi |
+| Timer | armv8-timer PPIs 13/14/11/10 (vtimer = INTID 27), cntfrq **24.576 MHz** | zumapro.dtsi |
+| CPUs | 8 cores, MPIDR 0x0..0x700, clusters 4+3+1 (ppi_cluster0 cpu0-6, cluster1 cpu7) | zumapro-cpu.dtsi |
+| Debug UART | serial_0 @ **0x10870000** (Exynos USI UART; earlycon in bootargs) | zumapro.dtsi |
+| USI blocks | PERIC0 0x10880000-0x108D0000, PERIC1 0x10C9xxxx, APM 0x155C-5E, HSI0 0x111B-1F; **spi_20 @ 0x111D0000** | zumapro-usi.dtsi |
+| UFS | hci 0x13200000, vs_hci 0x13201100, unipro 0x13280000, ufsp 0x132A0000, phy 0x13204000, cport 0x13208000; sysreg_ufs 0x13020000 | zuma-ufs.dtsi |
+| USB DWC3 | 0x11210000 + 0x10000; usbdrd phy 0x11100000 (+0x1111-4x); stallion: super-speed + gen1 | zuma-usb.dtsi |
+| Buttons | gpio-keys: power GPA4[0], voldown GPA4[1], volup GPA6[2] | stallion dtsi |
+| PMU / syscon | pmu_system_controller **0x15460000** (PSHOLD lives here) | zumapro.dtsi |
+| ACPM/PMIC | acpm_ipc mailbox 0x15110000, APM SRAM 0x15700000+0x58000; s2mpg14 (bus0 i2c @0x15500000 reg 0x1f), s2mpg15 (bus1 @0x15510000 reg 0x2f) | zumapro-pmic.dtsi |
+| Display | decon0/1/2 @ 0x19470000/0x19471000/0x19472000, dsim0 0x19440000, DP 0x110F0000; panel 1080x2424 | stallion display dtsi |
+| Bootloader FB | **no DT node — ABL injects it at boot**; gs101 used ~0xfac00000 a8r8g8b8 | must dump live FDT on device |
+| Touch | FocalTech FT3683U on SPI spi_20 (0x111D0000), rails VLDO25M 1.8V / VLDO4M 3.3V (s2mpg), reset GPP1[1], irq GPN0[0] | stallion touch dtsi |
 
-Timer PPIs on Tensor are the standard architected ones (13/14/11/10; vtimer
-IRQ = PPI 11 / INTID 27), NOT Qualcomm's 19/18. GIC is GIC-600; must probe
-SecurityExtn/Group1 handling as done on sweet.
+Timer PPIs are the standard architected ones (vtimer INTID 27), NOT
+Qualcomm's 19/18. GIC-600: probe SecurityExtn/Group1 handling in shim
+diagnostics as done on sweet.
 
 ## Porting strategy
 
