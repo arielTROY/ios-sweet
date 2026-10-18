@@ -21,6 +21,30 @@ _head:
 _start:
 	msr	daifset, #0xf
 	mov	x19, x0			/* DTB pointer from ABL */
+#ifdef TARGET_STALLION
+	/* Pixel ABL enters at EL2 (arm64 boot protocol). Drop to EL1h so
+	 * the rest of the shim runs the same as on Qualcomm's EL1 entry. */
+	mrs	x9, CurrentEL
+	cmp	x9, #(2 << 2)
+	b.ne	9f
+	mrs	x9, cnthctl_el2
+	orr	x9, x9, #3		/* EL1PCTEN | EL1PCEN */
+	msr	cnthctl_el2, x9
+	msr	cptr_el2, xzr		/* no FP/ASIMD traps */
+	mov	x9, #(1 << 31)		/* HCR_RW: EL1 is aarch64 */
+	msr	hcr_el2, x9
+	mov	x9, #(3 << 20)		/* CPACR FPEN */
+	msr	cpacr_el1, x9
+	movz	x9, #0x0800		/* SCTLR_RES1 */
+	movk	x9, #0x30d0, lsl #16
+	msr	sctlr_el1, x9
+	mov	x9, #0x3c5		/* SPSR: EL1h, DAIF masked */
+	msr	spsr_el2, x9
+	adr	x9, 9f
+	msr	elr_el2, x9
+	eret
+9:
+#endif
 	msr	spsel, #1
 	adr	x1, _stack_top
 	mov	sp, x1

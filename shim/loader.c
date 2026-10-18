@@ -76,16 +76,44 @@ static int magic_ok(const char *m)
 
 typedef void (*xnu_entry_t)(uint64_t boot_args_pa);
 
+extern char _end[];
+
+#ifdef TARGET_STALLION
+/* Pixel fastboot ignores the ramdisk we send: the payload is appended to
+ * our own Image right after _end (8-aligned). Scan for its magic. */
+static const struct payload *find_embedded(void)
+{
+	static const char want[] = "SWEETXNU";
+	uint64_t magic;
+	for (int i = 0; i < 8; i++)
+		((char *)&magic)[i] = want[i];
+
+	for (uintptr_t a = ((uintptr_t)_end + 7) & ~7UL;
+	     a < (uintptr_t)_end + 0x8000000; a += 8) {
+		if (*(volatile uint64_t *)a == magic)
+			return (const struct payload *)a;
+	}
+	return 0;
+}
+#endif
+
 const char *loader_boot(uintptr_t dtb)
 {
-	uint64_t rd_start, rd_end;
+	uint64_t rd_start = 0, rd_end = 0;
+	const struct payload *p = 0;
 
-	if (!fdt_chosen_u64(dtb, "linux,initrd-start", &rd_start) ||
-	    !fdt_chosen_u64(dtb, "linux,initrd-end", &rd_end))
-		return "no initrd in /chosen";
-	con_hex2("INITRD", "lo=", rd_start, "hi=", rd_end);
-
-	const struct payload *p = (const struct payload *)rd_start;
+#ifdef TARGET_STALLION
+	p = find_embedded();
+	if (p)
+		rd_start = rd_end = (uintptr_t)p;
+#endif
+	if (!p) {
+		if (!fdt_chosen_u64(dtb, "linux,initrd-start", &rd_start) ||
+		    !fdt_chosen_u64(dtb, "linux,initrd-end", &rd_end))
+			return "no initrd in /chosen";
+		con_hex2("INITRD", "lo=", rd_start, "hi=", rd_end);
+		p = (const struct payload *)rd_start;
+	}
 	if (!magic_ok(p->magic))
 		return "no SWEETXNU payload";
 	if (p->version != 1 || (p->adt_off & 7) || (rd_start & 7))

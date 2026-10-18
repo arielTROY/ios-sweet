@@ -13,7 +13,11 @@
 #include "console.h"
 #include "ufs.h"
 
+#ifdef TARGET_STALLION
+#define UFS_BASE	0x13200000UL	/* exynos-ufs hci block, zumapro dtsi */
+#else
 #define UFS_BASE	0x01d84000UL	/* ufshc@1d84000, sweet live FDT */
+#endif
 
 #define REG_CAP		0x00
 #define REG_VER		0x08

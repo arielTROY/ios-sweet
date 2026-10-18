@@ -1,7 +1,11 @@
 #pragma once
 #include <stdint.h>
 
+#ifdef TARGET_STALLION
+#define FB_PHYS	0xfac00000UL	/* best guess; runtime FB may differ */
+#else
 #define FB_PHYS	0x9c000000UL
+#endif
 
 struct mmu_info {
 	uint64_t img_lo, img_hi, ttbr;

@@ -14,6 +14,24 @@
 volatile uint32_t *con_fb = (volatile uint32_t *)FB_BASE;
 static uint32_t con_bg;
 static int row;
+static char cur_line[96];
+static int cur_col;
+
+/* Off-screen log sink (UART + ramoops prz on stallion; no-op on sweet). */
+void log_line(const char *line) __attribute__((weak));
+void log_line(const char *line) { (void)line; }
+
+void con_set_fb(uintptr_t pa)
+{
+	con_fb = (volatile uint32_t *)pa;
+}
+
+static void flush_line(void)
+{
+	cur_line[cur_col] = 0;
+	log_line(cur_line);
+	cur_col = 0;
+}
 
 void con_clear(uint32_t bg)
 {
@@ -30,6 +48,8 @@ static void put_char(int col, char ch, uint32_t fg)
 {
 	if (ch < 0x20 || ch > 0x7e)
 		ch = '?';
+	if (cur_col < (int)sizeof(cur_line) - 1)
+		cur_line[cur_col++] = ch;
 	const unsigned char *g = font8x16[ch - 0x20];
 	int x0 = MARGIN + col * CH_W, y0 = MARGIN + row * CH_H;
 	if (x0 + CH_W > FB_W || y0 + CH_H > FB_H)
@@ -63,6 +83,7 @@ static void fmt_hex(char *buf, uint64_t v, int digits)
 
 void con_skip(void)
 {
+	flush_line();
 	row++;
 }
 
@@ -70,6 +91,7 @@ void con_str(const char *label, const char *s)
 {
 	put_str(0, label, YELLOW);
 	put_str(LABEL_COLS, s, WHITE);
+	flush_line();
 	row++;
 }
 
@@ -93,5 +115,6 @@ void con_hex2(const char *label, const char *a, uint32_t va, const char *b, uint
 		fmt_hex(buf, vb, 8);
 		put_str(col, buf, WHITE);
 	}
+	flush_line();
 	row++;
 }

@@ -8,10 +8,25 @@
  */
 #include <stdint.h>
 #include "console.h"
+#include "fdt.h"
 #include "mmu.h"
 #include "loader.h"
 #include "ufs.h"
 
+#ifdef TARGET_STALLION
+/* Pixel 10a / Tensor G4 (zumapro): values from stallion DTS. */
+#define IMEM_RESTART_REASON	0x15460c00UL	/* unused placeholder */
+#define RESTART_BOOTLOADER	0x77665500U
+#define PSHOLD			0x15463e9cUL	/* pmu_system_controller + 0x3e9c */
+
+#define GICD_BASE		0x10400000UL
+#define GICR_BASE		0x10440000UL
+#define GICR_SIZE		0x200000UL
+#define VTIMER_INTID		27	/* architected PPI 11 */
+#define PTIMER_INTID		30	/* non-sec phys PPI 14 */
+#define TIMEBASE_MHZ_X100	2457	/* 24.576 MHz */
+#define SMP_TARGET(mp)		((mp) << 8)
+#else
 #define IMEM_RESTART_REASON	0x146aa65cUL	/* qcom,msm-imem restart_reason@65c */
 #define RESTART_BOOTLOADER	0x77665500U
 #define PSHOLD			0x0c264000UL
@@ -19,6 +34,12 @@
 #define GICD_BASE		0x17a00000UL
 #define GICR_BASE		0x17a60000UL
 #define GICR_SIZE		0x100000UL
+#define VTIMER_INTID		19	/* DT: <GIC_PPI 3 ...>, not the usual 27 */
+#define PTIMER_INTID		18	/* DT: <GIC_PPI 2 ...> */
+#define TIMEBASE_MHZ_X100	1920
+#define SMP_TARGET(mp)		((mp) << 8)
+#endif
+
 #define GICR_PE_SIZE		0x20000UL
 #define GICR_TYPER		0x08
 #define GICR_WAKER		0x14
@@ -30,8 +51,6 @@
 #define GICR_ISPENDR0		(GICR_SGI + 0x200)
 #define GICR_ISACTIVER0		(GICR_SGI + 0x300)
 #define GICR_ICFGR1		(GICR_SGI + 0xc04)
-#define VTIMER_INTID		19	/* DT: <GIC_PPI 3 ...>, not the usual 27 */
-#define PTIMER_INTID		18	/* DT: <GIC_PPI 2 ...> */
 #define SGI_INTID		1
 
 #define PSCI_VERSION		0x84000000UL
@@ -190,7 +209,7 @@ static void __attribute__((unused)) test_smp(void)
 	int64_t ret[NR_CPUS];
 
 	for (int i = 1; i < NR_CPUS; i++)
-		ret[i] = smc(PSCI_CPU_ON, (uint64_t)i << 8, (uintptr_t)secondary_entry, i);
+		ret[i] = smc(PSCI_CPU_ON, SMP_TARGET(i), (uintptr_t)secondary_entry, i);
 	delay_ms(500);
 	for (int i = 1; i < NR_CPUS; i++) {
 		char label[] = "CPU0";
@@ -367,9 +386,71 @@ static uint64_t ticks_mem(void)
 
 static uint32_t to_us(uint64_t ticks)
 {
-	return ticks * 10 / 192;	/* 19.2 MHz */
+	return ticks * 1000 / (TIMEBASE_MHZ_X100 * 10);	/* ticks -> us */
 }
 
+#ifdef TARGET_STALLION
+/*
+ * Stallion milestone A: one boot answers what the Pixel ABL leaves us.
+ * Everything below is read-only hardware probing; the only writes are to
+ * the framebuffer, the ramoops console prz and the UART.
+ * Then a plain PSCI reset boots Android again so the log can be pulled
+ * from /sys/fs/pstore over adb.
+ */
+void shim_main(uint64_t dtb)
+{
+	/* Log sink is live before the console: UART + prz need no setup. */
+	stage = "fdt";
+	uint32_t fb_w = 0, fb_h = 0, fb_stride = 0;
+	uintptr_t fb = fdt_find_fb(dtb, &fb_w, &fb_h, &fb_stride);
+	if (fb)
+		con_set_fb(fb);
+
+	con_clear(RED);
+	con_str("SHIM", "stallion milestone A: recon");
+	con_hex2("DTB", "at=", dtb, "magic=", dtb ? __builtin_bswap32(rd32(dtb)) : 0);
+	con_hex2("FB", "fdt=", fb, "w/h=", (fb_w << 16) | (fb_h & 0xffff));
+	con_hex("FBSTR", fb_stride);
+	con_skip();
+
+	/* The whole ABL FDT goes to the prz log: node names + reg/compatible. */
+	stage = "fdt dump";
+	fdt_dump(dtb, log_line);
+	con_str("FDT", "dumped to prz");
+	con_skip();
+
+	/* An xnu payload appended after _end means: boot it (MMU stays off). */
+	stage = "loader";
+	const char *why = loader_boot(dtb);
+	con_str("LOADER", why);
+	con_skip();
+
+	stage = "ufs";
+	test_ufs();
+	con_skip();
+
+	stage = "psci";
+	con_hex2("PSCI", "ver=", smc(PSCI_VERSION, 0, 0, 0), "smccc=", smc(SMCCC_VERSION, 0, 0, 0));
+	psci_line("CPU_ON", PSCI_CPU_ON);
+	psci_line("CPU_OFF", PSCI_CPU_OFF);
+	psci_line("RESET", PSCI_SYSTEM_RESET);
+	psci_line("SYS_RST2", PSCI_SYSTEM_RESET2);
+	psci_line("SUSPEND", PSCI_SYSTEM_SUSPEND);
+	con_skip();
+
+	stage = "gic";
+	test_gic();
+	con_skip();
+
+	stage = "smp";
+	test_smp();
+	con_skip();
+
+	con_str("SHIM", "recon done, reset to android");
+	delay_ms(15000);
+	reset(5);
+}
+#else
 void shim_main(uint64_t dtb)
 {
 	struct mmu_info mi;
@@ -433,3 +514,4 @@ void shim_main(uint64_t dtb)
 	stage = "done";
 	reset(40);
 }
+#endif /* TARGET_STALLION */
