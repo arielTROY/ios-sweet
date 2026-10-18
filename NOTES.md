@@ -23,6 +23,9 @@ Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dme
   Do not boot anything new on the phone until a reset path is proven offline.
 - Reason 0xcafe = ABL's fallback when it cannot read the stored reason (not a canary signal).
 - `/sys/fs/pstore` is NOT readable from adb shell (Permission denied); `logcat -L` fails.
+- CI: run 39164660121 (main 00b847e, patches through 0083) did not start: "account is
+  locked due to a billing issue" on arielTROY. Local build impossible here (no Xcode,
+  ~5 GB free). Kernel builds wait for the billing fix.
 - A/B: "AB Decision: decrement active slot boot retry"; slot data a 0x1c00 -> 0x1e01 after
   a stock Android boot. Watch it.
 
