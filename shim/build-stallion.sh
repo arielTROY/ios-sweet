@@ -25,6 +25,7 @@ if [ -n "${1:-}" ]; then
 	[ "$pad" = 0 ] || dd if=/dev/zero bs=1 count="$pad" >> out-st/Image 2>/dev/null
 	cat "$1" >> out-st/Image
 fi
-# v4 header: kernel only, no ramdisk/dtb inside the boot image.
-python3 ../tools/mkbootimgv4.py out-st/Image - out-st/shim-boot-st.img
+# ABL only launches images that carry the stock AVB footer: wrap our
+# Image in the stock boot.img (research/stallion-fw/boot.img).
+python3 ../tools/mkhybridboot.py ../research/stallion-fw/boot.img out-st/Image out-st/shim-boot-st.img
 ls -l out-st/Image out-st/shim-boot-st.img
