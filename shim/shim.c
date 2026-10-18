@@ -437,6 +437,21 @@ static uint32_t to_us(uint64_t ticks)
  */
 void shim_main(uint64_t dtb)
 {
+#if defined(PSTORE1) || defined(PSTORE2)
+	/* Does the ramoops console prz survive our exit? PSTORE1 ends in a
+	 * PSCI reset, PSTORE2 in ABL's watchdog. Read back from Android:
+	 * su -c cat /sys/fs/pstore/console-ramoops-0 */
+	log_line("SWEET PSTORE TEST: hello from the stallion shim");
+	log_line(dtb ? "SWEET dtb pointer non-zero" : "SWEET dtb pointer zero");
+#ifdef PSTORE1
+	log_line("SWEET exit: PSCI SYSTEM_RESET");
+	smc(PSCI_SYSTEM_RESET, 0, 0, 0);
+#else
+	log_line("SWEET exit: spinning for the watchdog");
+#endif
+	for (;;)
+		__asm__ volatile("wfe");
+#endif
 	/* Before anything that could stall: a spare core that resets the
 	 * phone at the deadline, so a hang never needs a finger on the
 	 * power button. */
