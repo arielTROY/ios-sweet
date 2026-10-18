@@ -22,6 +22,14 @@ Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dme
   session). Normal boot ran it, hung, WDT, repeat. Fixed with `fastboot flash boot_a
   research/stallion-fw/boot.img` (factory, sha256 8a85344a...); Android normal-boots in 29 s.
   ABL's armed watchdog is therefore a safe net: hang -> WDT -> Android -> adb.
+- **2026-10-19 device facts (tools/stallion-try.sh, logs/st-try/summary.txt):**
+  hybrid CANARY0 (PSCI SYSTEM_RESET at first instruction) -> Android in 29 s: PSCI reset
+  WORKS from our EL2 entry. CANARY9 (feed WDT cl0 WTCNT 0x10060008 for 90 s) -> 215 s: our
+  code RUNS and WDT regs are NS-writable. CANARY10 (SYSIP_DAT0 := 0xFC via SMC, then reset)
+  -> Android: reboot mode is NOT honoured from SYSIP_DAT0 alone (pixel-reboot-v2 keeps a BMS
+  copy), so no fastboot/Android 1-bit channel; use timing (reset now vs feed WDT N s).
+  PROBE1: DWC3 GSNPSID @0x1121c120 reads a DWC3 ID after handoff (31 s) -> USB controller
+  clocked; a DWC3 CDC-ACM log gadget for the shim is in progress (agent worktree).
 - (superseded) **DANGER:** after that watchdog reset the phone sat on the Google logo until the user
   long-pressed power (reason 0xcccc). Watchdog resets are therefore NOT a safe net, and a
   working software reset is not yet known. The first milestone-A image also froze on the logo.

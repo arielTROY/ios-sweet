@@ -20,6 +20,56 @@ _head:
 	.globl _start
 _start:
 	msr	daifset, #0xf
+#ifdef PROBE1
+	/* Is ABL's DWC3 still clocked after handoff? Timing answer:
+	 * GSNPSID looks like DWC3 -> reset now (~30 s to adb);
+	 * readable but odd -> feed WDT 60 s, then reset (~90 s);
+	 * read hangs -> ABL's watchdog recovers (much longer). */
+	movz	x2, #0xc120
+	movk	x2, #0x1121, lsl #16	/* DWC3 GSNPSID */
+	ldr	w3, [x2]
+	lsr	w3, w3, #16
+	mov	w4, #0x5533
+	cmp	w3, w4
+	b.eq	9f
+	mov	w4, #0x3331
+	cmp	w3, w4
+	b.eq	9f
+	mov	w4, #0x3332
+	cmp	w3, w4
+	b.eq	9f
+	/* odd value: feed cl0 WTCNT for 60 s */
+	movz	x2, #0x0008
+	movk	x2, #0x1006, lsl #16
+	mrs	x4, cntpct_el0
+	movz	x5, #0x57e4, lsl #16	/* 60 s * 24.576 MHz = 0x57e40000 */
+	add	x5, x4, x5
+	mov	x6, #1
+	lsl	x6, x6, #31
+1:	movz	w3, #0xffff
+	str	w3, [x2]
+	subs	x6, x6, #1
+	b.eq	9f
+	mrs	x4, cntpct_el0
+	cmp	x4, x5
+	b.lo	1b
+9:
+#define CANARY0
+#endif
+#ifdef CANARY10
+	/* 1-bit channel calibration: reboot mode := bootloader via EL3
+	 * PRIV_REG, then PSCI reset. Fastboot = channel works (the CANARY0
+	 * baseline without this write lands in Android). */
+	movz	x0, #0x0504
+	movk	x0, #0x8200, lsl #16
+	movz	x1, #0x0810
+	movk	x1, #0x1546, lsl #16
+	mov	x2, #1
+	mov	x3, #0xfc
+	mov	x4, #0
+	smc	#0
+#define CANARY0
+#endif
 #ifdef CANARY9
 	/* Timing proof: feed ABL's armed watchdog (cl0 WTCNT, plain
 	 * non-secure write as in s3c2410_wdt) for ~90 s, then stop and let
