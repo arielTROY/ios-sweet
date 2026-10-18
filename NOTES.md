@@ -2,6 +2,28 @@
 
 ## Agent handoff / active work (2026-10-15, latest)
 
+### >>> UPDATE 2026-10-18 (PIXEL 10a PORT KICKOFF — read first if working on stallion) <<<
+
+New goal (fork `arielTROY/ios-sweet`): port everything to **Pixel 10a "stallion"
+(Tensor G4 / zumapro, Exynos-derived)**. Full port plan + hardware address
+table + phased strategy in **`STALLION-PORT.md`** (new file, this commit).
+
+Key deltas vs. sweet: boot.img header v4 (`fastboot boot` IGNORES the ramdisk —
+payload embedding must be redesigned); debug UART exists over USB-C SBU
+(`fastboot oem uart enable`, MMIO 0x10870000) — no more framebuffer-only debug;
+GIC at 0x10400000/0x10440000, UFS HCI (exynos variant) at 0x13200000, DRAM base
+0x80000000, standard timer PPIs; bootloader FB ~0xfac00000 (gs101 pattern,
+verify); touch is FocalTech FT3683U over **SPI**; buttons are plain GPIOs;
+regulators via ACPM mailbox + s2mpg PMIC (no RPMh/SPMI). ~40 of the 80 XNU
+patches (all Apple-compat work: AMFI/AKS/HFS+/HID ABI/identity/diagnostics)
+carry over unchanged.
+
+NEXT: clone the stallion kernel tree / extract DTB from `vendor_kernel_boot`
+to resolve every "verify" cell in STALLION-PORT.md, then shim Phase 0
+(UART + diagnostics). No device-specific code written yet — this commit is
+research + plan only. The sweet work below is untouched and remains the
+reference implementation.
+
 ### >>> UPDATE 2026-10-18 (read first, then the 10-17 handoff below) <<<
 
 **STATE at end of 2026-10-18 (evening):**
