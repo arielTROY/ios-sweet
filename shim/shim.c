@@ -199,8 +199,10 @@ void exc_handler(uint64_t slot, uint64_t *regs)
 extern void sentinel_entry(void);
 extern volatile uint64_t sentinel_deadline;
 
-/* (Re)arm the sentinel: whole-phone reset in `s` seconds from now. */
-static void sentinel_kick(unsigned s)
+/* (Re)arm the sentinel: whole-phone reset in `s` seconds from now.
+ * Also used by loader.c right before it jumps to XNU. */
+void sentinel_kick(unsigned s);
+void sentinel_kick(unsigned s)
 {
 	sentinel_deadline = now() + rsr("cntfrq_el0") * s;
 	__asm__ volatile("dsb sy" ::: "memory");

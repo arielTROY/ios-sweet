@@ -34,12 +34,26 @@ _start:
 	mrs	x9, CurrentEL
 	cmp	x9, #(2 << 2)
 	b.ne	9f
+	/* HCR first: RW (EL1 is aarch64), E2H=0, so the EL2 registers below
+	 * have their non-VHE layout even if ABL ran with VHE. */
+	mov	x9, #(1 << 31)
+	msr	hcr_el2, x9
+	isb
 	mrs	x9, cnthctl_el2
 	orr	x9, x9, #3		/* EL1PCTEN | EL1PCEN */
 	msr	cnthctl_el2, x9
+	/* XNU runs on CNTV; its PSCI secondaries zero CNTVOFF too
+	 * (sweet_secondary_entry), so the boot CPU must match. */
+	msr	cntvoff_el2, xzr
+	msr	vttbr_el2, xzr		/* no stage 2 */
 	msr	cptr_el2, xzr		/* no FP/ASIMD traps */
-	mov	x9, #(1 << 31)		/* HCR_RW: EL1 is aarch64 */
-	msr	hcr_el2, x9
+	/* ICC_SRE_EL2: SRE | Enable. Without Enable, XNU's ICC_SRE_EL1
+	 * access in pe_init_fiq traps to EL2 (ABL's vectors) and hangs. */
+	mrs	x9, S3_4_C12_C9_5
+	orr	x9, x9, #0x1		/* SRE */
+	orr	x9, x9, #0x8		/* Enable */
+	msr	S3_4_C12_C9_5, x9
+	isb
 	mov	x9, #(3 << 20)		/* CPACR FPEN */
 	msr	cpacr_el1, x9
 	movz	x9, #0x0800		/* SCTLR_RES1 */
