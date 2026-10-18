@@ -438,10 +438,34 @@ void shim_main(uint64_t dtb)
 	/* Before anything that could stall: a spare core that resets the
 	 * phone at the deadline, so a hang never needs a finger on the
 	 * power button. */
+#ifdef CANARY2
+	/* Timing channel: report cntfrq through how long we wait before
+	 * resetting, counted with a hard-coded 24.576 MHz and capped by an
+	 * iteration count in case CNTPCT does not tick. */
+	{
+		uint64_t f = rsr("cntfrq_el0"), secs;
+		if (f == 24576000)
+			secs = 20;
+		else if (f == 0)
+			secs = 35;
+		else
+			secs = 50;
+		uint64_t end = now() + 24576000ULL * secs;
+		for (uint64_t n = 0; n < 2000000000ULL && now() < end; n++)
+			;
+		smc(PSCI_SYSTEM_RESET, 0, 0, 0);
+		for (;;)
+			__asm__ volatile("wfe");
+	}
+#endif
 	uint64_t sret = sentinel_start(SENTINEL_S);
 #ifdef CANARY1
-	/* Canary: does the sentinel fire? Hang here on purpose. */
+	/* Canary: does the sentinel fire? Wait well past its deadline,
+	 * then reset ourselves, so the phone comes back either way; the
+	 * return time tells which reset happened. */
 	(void)sret;
+	delay_ms(70000);
+	smc(PSCI_SYSTEM_RESET, 0, 0, 0);
 	for (;;)
 		__asm__ volatile("wfe");
 #endif

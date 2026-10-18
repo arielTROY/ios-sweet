@@ -20,6 +20,49 @@ _head:
 	.globl _start
 _start:
 	msr	daifset, #0xf
+#ifdef CANARY5
+	/* Canary: reboot mode := normal (SYSIP_DAT0 via EL3 PRIV_REG
+	 * write), then reset. Landing in Android instead of fastboot
+	 * proves this code ran. */
+	movz	x0, #0x0504
+	movk	x0, #0x8200, lsl #16	/* SMC_CMD_PRIV_REG */
+	movz	x1, #0x0810
+	movk	x1, #0x1546, lsl #16	/* PMU + SYSIP_DAT0 */
+	mov	x2, #1			/* write */
+	mov	x3, #0			/* REBOOT_MODE_NORMAL */
+	mov	x4, #0
+	smc	#0
+#define CANARY0
+#endif
+#ifdef CANARY4
+	/* Canary: marker A in the DSS EMERGENCY_REASON word, which ABL
+	 * prints as "Reboot reason" on the next boot; spin; marker B;
+	 * reset. A reason of 0x5e01a000 means we were killed mid-spin. */
+	movz	x2, #0x0300
+	movk	x2, #0xd810, lsl #16	/* 0xd8100300 */
+	movz	w3, #0xa000
+	movk	w3, #0x5e01, lsl #16
+	str	w3, [x2]
+	dsb	sy
+	mov	x1, #1
+	lsl	x1, x1, #34
+1:	subs	x1, x1, #1
+	b.ne	1b
+	movz	w3, #0xb000
+	movk	w3, #0x5e01, lsl #16
+	str	w3, [x2]
+	dsb	sy
+#define CANARY0
+#endif
+#ifdef CANARY3
+	/* Canary: burn ~2^36 iterations (tens of seconds) before the
+	 * reset, so a slow return proves this code ran. */
+	mov	x1, #1
+	lsl	x1, x1, #36
+1:	subs	x1, x1, #1
+	b.ne	1b
+#define CANARY0
+#endif
 #ifdef CANARY0
 	/* Canary: prove the bootloader jumps here, touch nothing, reset. */
 	movz	x0, #0x0009

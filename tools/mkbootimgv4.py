@@ -14,7 +14,9 @@ import sys
 def pack(kernel, ramdisk, out, cmdline=b"", page=4096):
     k = open(kernel, "rb").read()
     r = open(ramdisk, "rb").read() if ramdisk else b""
-    os_version = 0x10 << 11 | 8 << 4 | 1   # 16.0.0, patch 2026-08-ish
+    # 0 = inherit from the stored boot partition (stock does this). A made-up
+    # patch level older than the device's looks like a rollback to ABL.
+    os_version = 0
     hdr_size = 8 + 4 * 9 + 1536 + 4
     hdr = struct.pack(
         "<8sIIIIIIIII1536sI",

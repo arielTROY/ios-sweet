@@ -2,6 +2,30 @@
 
 ## Agent handoff / active work (2026-10-15, latest)
 
+### >>> UPDATE 2026-10-18 late (stallion boot experiments — read first) <<<
+
+Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dmesg`; its
+`[PRE]` lines = reset summary of the previous session):
+- `fastboot boot` of a bare image (raw or lz4, any header os_version, even padded to 64 MiB)
+  NEVER runs our code: phone resets back to fastboot in 3-11 s (canaries with a 2^36 spin,
+  DRAM marker, SYSIP_DAT0 write all show nothing). Stock boot.img via `fastboot boot` boots Android.
+- **Hybrid works:** stock boot.img with only the kernel bytes replaced by our Image
+  (kernel_size patched, stock AVB footer kept; `shim/out-st/st-CANARY5-hybrid.img`) RUNS our
+  code: CANARY5's SMC 0x82000504(0x15460810, write, 0) set reboot mode -> next boot printed
+  "Reboot mode: 0x0 - Normal Boot". => ABL needs the AVB footer (or something in it).
+- After that, PSCI SYSTEM_RESET (x0=0x84000009, smc #0 from EL2) did NOT reset the phone;
+  the bootloader-armed CPU watchdog fired instead ("APC Watchdog Early", RST_STAT 0x1
+  CLUSTER0_NONCPU_WDTRESET, reason 0xcbea). ABL leaves WDT cl0/cl1 armed at handoff unless
+  `fastboot oem watchdog disable` was set.
+- **DANGER:** after that watchdog reset the phone sat on the Google logo until the user
+  long-pressed power (reason 0xcccc). Watchdog resets are therefore NOT a safe net, and a
+  working software reset is not yet known. The first milestone-A image also froze on the logo.
+  Do not boot anything new on the phone until a reset path is proven offline.
+- Reason 0xcafe = ABL's fallback when it cannot read the stored reason (not a canary signal).
+- `/sys/fs/pstore` is NOT readable from adb shell (Permission denied); `logcat -L` fails.
+- A/B: "AB Decision: decrement active slot boot retry"; slot data a 0x1c00 -> 0x1e01 after
+  a stock Android boot. Watch it.
+
 ### >>> UPDATE 2026-10-18 (PIXEL 10a PORT KICKOFF — read first if working on stallion) <<<
 
 New goal (fork `arielTROY/ios-sweet`): port everything to **Pixel 10a "stallion"
