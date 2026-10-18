@@ -26,6 +26,17 @@ session-by-session progress goes in `NOTES.md` as usual.
   LineageOS (`android_kernel_google_gs-6.1_devices`, stallion imported in
   commit cafda38), CalyxOS gitlab, GrapheneOS `17-stallion`.
 
+## Live memory map (measured 2026-10-19, root `/proc/iomem` + `/sys/firmware/fdt`)
+
+- DRAM: 0x80000000-0xffffffff (2 GB, many firmware carve-outs) and
+  **0x880000000-0x9ffffffff (6 GB; memory@880000000/900000000/980000000)** with only
+  0x9bdb50000-0x9c99fffff and 0x9c9a15000-0x9c9ad5fff reserved.
+  => XNU RAM window: 0x880000000 + 4.5 GB (to 0x9a0000000) is clean; use it instead of the
+  DTS-based 0xA0000000+544M guess in mkadt.
+- ABL loads the kernel at 0x80080000, DTB at 0x8a000000, initrd 0x86000000-0x87f8b4a1.
+- No framebuffer/splash node in the live FDT (confirmed).
+- Raw copies: research/stallion-ko/{iomem.txt,live-fdt.dtb} (gitignored: contain IMEI/MACs).
+
 ## Hardware address table (extracted from stallion/zumapro DTS 2026-10-18)
 
 Sources: LineageOS `android_kernel_google_gs-6.1_devices` /

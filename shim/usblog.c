@@ -902,8 +902,11 @@ static void tx_kick(void)
 
 /* ---- API ---- */
 
+void wdt_kick(void);
+
 void usblog_poll(void)
 {
+	wdt_kick();
 	if (!u.ready || u.in_poll)
 		return;
 	u.in_poll = 1;

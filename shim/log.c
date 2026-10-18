@@ -58,8 +58,23 @@ static void uart_putc(char c)
 	wr32(UART_BASE + UTXH, (uint8_t)c);
 }
 
+/* ABL leaves the cl0 watchdog armed at handoff. Feeding it on every
+ * log line and delay tick means a real hang still resets the phone
+ * (back into Android), while normal progress keeps it alive. WTCNT is
+ * non-secure writable (CANARY9, 2026-10-19). */
+#define WDT_CL0_WTCNT	0x10060008UL
+void wdt_kick(void)
+{
+	wr32(WDT_CL0_WTCNT, 0xffff);
+}
+
+/* Counted by the sentinel core (start.S) for the timing log. */
+volatile uint32_t log_lines;
+
 void log_line(const char *line)
 {
+	wdt_kick();
+	log_lines++;
 #ifdef SHIM_USBLOG
 	/* USB CDC-ACM log port (usblog.c); queued until a host connects. */
 	{

@@ -26,7 +26,7 @@ t0=$(date +%s)
 fastboot boot "$IMG" >/dev/null 2>&1
 sleep 3
 where=none
-for i in $(seq 1 480); do
+for i in $(seq 1 ${TRY_WAIT_S:-1500}); do
 	if adb devices | grep -qw device; then where=adb; break; fi
 	if fastboot devices | grep -q fastboot; then where=fastboot; break; fi
 	sleep 1

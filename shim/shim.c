@@ -122,10 +122,14 @@ static uint64_t now(void)
 	return rsr("cntpct_el0");
 }
 
+void wdt_kick(void);
+
 static void delay_ms(unsigned ms)
 {
-	uint64_t end = now() + rsr("cntfrq_el0") / 1000 * ms;
+	uint64_t f = rsr("cntfrq_el0");
+	uint64_t end = now() + (f ? f : 24576000) / 1000 * ms;
 	while (now() < end) {
+		wdt_kick();
 #ifdef SHIM_USBLOG
 		usblog_poll();
 #endif
@@ -485,6 +489,16 @@ void shim_main(uint64_t dtb)
 	}
 #endif
 	uint64_t sret = sentinel_start(SENTINEL_S);
+#ifdef CAL1
+	/* Timing-log calibration: exactly 4 lines, then idle until the
+	 * sentinel reports. t_back = offset + SENTINEL_S + 4 * 5 s. */
+	log_line("CAL 1");
+	log_line("CAL 2");
+	log_line("CAL 3");
+	log_line("CAL 4");
+	for (;;)
+		wdt_kick();
+#endif
 #ifdef CANARY1
 	/* Canary: does the sentinel fire? Wait well past its deadline,
 	 * then reset ourselves, so the phone comes back either way; the
@@ -532,7 +546,9 @@ void shim_main(uint64_t dtb)
 
 	/* The whole ABL FDT goes to the prz log: node names + reg/compatible. */
 	stage = "fdt dump";
+#ifndef NO_FDT_DUMP	/* timing-log builds: keep the line count small */
 	fdt_dump(dtb, log_line);
+#endif
 	con_str("FDT", "dumped to prz");
 	con_skip();
 

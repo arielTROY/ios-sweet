@@ -306,6 +306,25 @@ sentinel_entry:
 	mrs	x3, cntpct_el0
 	cmp	x3, x1
 	b.lo	2b
+	/* Timing log: wait 5 s per log line the boot CPU printed (feeding
+	 * ABL's watchdog), so the phone's return time tells how far the
+	 * shim got: lines = (t_back - t_android - deadline) / 5. */
+	adr	x6, log_lines
+	ldr	w6, [x6]
+	cmp	w6, #40
+	b.ls	3f
+	mov	w6, #40
+3:	movz	x7, #0x0753, lsl #16	/* 5 s * 24.576 MHz = 0x07530000 */
+	mul	x7, x7, x6
+	add	x7, x1, x7
+	movz	x8, #0x0008
+	movk	x8, #0x1006, lsl #16	/* WDT cl0 WTCNT */
+	movz	w9, #0xffff
+4:	str	w9, [x8]
+	isb
+	mrs	x3, cntpct_el0
+	cmp	x3, x7
+	b.lo	4b
 	movz	x0, #0x0009
 	movk	x0, #0x8400, lsl #16	/* PSCI SYSTEM_RESET */
 	smc	#0
