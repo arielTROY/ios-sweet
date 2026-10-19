@@ -35,7 +35,25 @@ Nothing has run on hardware. The init sequence, failure-mode list and the Exynos
 (not used yet) are in the header comment of usblog.c. Opt-in extras: `-DUSBLOG_PD_PROBE` (pd_hsi0
 status via the PMU-read SMC), `-DUSBLOG_FORCE_FS`.
 
-### >>> UPDATE 2026-10-19 13:20 (stallion: XNU BOOTS TO ROOT WAIT — read first) <<<
+### >>> UPDATE 2026-10-19 14:15 (stallion: XNU READS THE PHONE'S UFS — read first) <<<
+
+xnu 0087-0089 + ADT `/sweet-ufs` (Exynos UFSHCI 0x13200000, mkadt stallion): with boot-arg
+`rd=ufsroot0 sweetkeys=0 sweettouch=0` XNU's own UFS driver finds partitions by GPT name and
+opens `userdata` (sda34) as ufsroot0; HFS then rejects the Android filesystem ("unknown Volume
+Signature", expected: no iOS root yet). Quirk: the Exynos host returns only the FIRST 4 KiB
+block of a multi-block command whatever the PRDT entry size (256 KiB, 4 KiB tried) -> 0089 issues
+one single-block command per 4 KiB (slow; revisit the descriptor layout later).
+NEXT = the iOS root on userdata. User decisions (2026-10-19): userdata may be given entirely to
+iOS (Android then no longer boots normally); a drive is to be plugged into the Mac for the
+~30 GB build (not visible to diskutil yet: ioreg shows only "SanDisk 3.2Gen1" as a USB device
+without a disk). Build plan: tools/mkiosroot.sh needs Linux (hfsprogs + apfs-fuse) ->
+run it in a container (docker 28.3 is installed; no sudo needed) with the IPSW dmgs on the
+external drive; then `fastboot flash userdata`. CAUTION: Android formats a "formattable"
+userdata that fails to mount -> any normal Android boot after the flash destroys the root;
+stage 1 must jump to XNU before post-fs-data (early-init rc in the Magisk overlay) or the
+flash must be repeated after each Android boot.
+
+### >>> UPDATE 2026-10-19 13:20 (stallion: XNU BOOTS TO ROOT WAIT) <<<
 
 `tools/stallion-xnu-run.sh` = one XNU boot (Path B: stock kernel with
 `kvm-arm.mode=none ehld.noehld=1 hardlockup_watchdog.hardlockup_panic=0 mem=3G` as stage 1,
