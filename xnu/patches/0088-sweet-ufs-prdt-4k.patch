@@ -1,0 +1,24 @@
+sweet ufs: one PRDT entry per 4 KiB page
+
+The Exynos UFSHCI on stallion transfers only the first 4 KiB of a larger
+PRDT entry (a 2-block GPT entry-array read returned block 1 only, so
+"super" and "userdata", entries 33/34, were invisible). Linux always
+hands the host page-sized segments; do the same. 1 MiB / 4 KiB = 256
+entries = 5 KiB of UCD, which fits the 12 KiB slot before DMA_BOUNCE.
+
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -71,7 +71,12 @@
+ 
+ #define UFS_BLOCK       4096u
+ #define BOUNCE_SIZE     (1u << 20)
+-#define PRDT_CHUNK      (256u << 10)            /* PRDT byte count field: 18 bits */
++/*
++ * One PRDT entry per 4 KiB page, as Linux's scatterlists always give the
++ * host: the Exynos UFSHCI (stallion) moves only the first 4 KiB of a
++ * larger entry (a 2-block GPT read returned the first block only).
++ */
++#define PRDT_CHUNK      4096u
+ #define PRDT_MAX        (BOUNCE_SIZE / PRDT_CHUNK)
+ #define CMD_TIMEOUT_NS  (5ull * NSEC_PER_SEC)
+ #define CMD_SPIN_NS     (50ull * NSEC_PER_USEC)
