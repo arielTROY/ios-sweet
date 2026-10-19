@@ -2,6 +2,26 @@
 
 ## Agent handoff / active work (2026-10-15, latest)
 
+### >>> UPDATE 2026-10-19 (xnu 0084: sweet USB Ethernet + live log on stallion, compiled only, NOT run) <<<
+
+`xnu/patches/0084-stallion-usb.patch` (bsd/dev/sweet_usb.c, iokit/bsddev/IOKitBSDInit.cpp) +
+`tools/mkadt.py --target stallion` node **/sweet-usb** (`reg` = <0x11210000 0x10000>,
+`sweet-sysmmu-ctrl` = <0x11048000>, compatible snps,dwc31). Board selection = presence of that ADT
+node (sweet's ADT has none and stays byte-identical, checked with a fixed seed; sweet's Qualcomm
+path is unchanged). On stallion: started once from IOFindBSDRoot before the root lookup (so no UFS
+root needed; do NOT pass rd=ufsroot0 on stallion yet: no /sweet-ufs -> immediate panic; without a
+root the kernel waits for root and keeps streaming), `sweetusb` defaults to 2 there (0 off, 1 reg
+dump only), `sweetusblog=0` as on sweet. DWC_usb31 take-over follows shim/usblog.c: stop Linux's
+running session (DCTL 0x80f00000) -> SysMMU CTRL_VM(0) bit0 off -> GCTL device -> CSFTRST with
+global regs saved/restored, 50+100 ms; SUSPHY/ENBLSLPM cleared around each DEPCMD (mutex);
+no GCC/QUSB2/QSCRATCH. Host side is the same CDC-ECM as sweet (host MAC 02:00:5e:77:ee:01,
+192.168.7.1/24, UDP 5140) but `tools/sweet-usbnet.sh` is Linux-only (ip/nmcli): on the Mac give the
+new enX interface 192.168.7.1/24 with ifconfig and listen with `nc -ul 5140`.
+Verified: `patch -p1 -F0` on top of the 0083 tree (CI build tree of run 39225760694), both files
+syntax-compile with the CI flags (tools/xnu-cc.py with Xcode clang; no new warnings classes).
+Open: S2MPU/permissions for XNU's DMA pages (shim's .bss worked), Linux's 30 s watchdogs (cl0/cl1)
+are still armed after sweetjump `go`, and whether macOS binds its ECM driver to this descriptor set.
+
 ### >>> UPDATE 2026-10-19 (stallion USB log gadget, compiled only, NOT run) <<<
 
 `shim/usblog.c` + `usblog.h`: bare-metal CDC-ACM serial port on the DWC3 @0x11210000

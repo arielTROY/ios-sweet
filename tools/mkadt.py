@@ -58,6 +58,11 @@ ST_TIMEBASE = 24576000            # armv8-timer clock-frequency
 ST_VTIMER_INTID = 27              # architected PPI 11 (not Qualcomm's 19)
 # ramoops_mem@fd3ff000: no record-size, so the console zone (0x200000) is first
 ST_RAMLOG, ST_RAMLOG_SIZE = 0xfd3ff000, 0x200000
+# zuma-usb.dtsi usbdrd_dwc3 (DWC_usb31 1.30a, GSNPSID 0x33313130 measured) and
+# the HSI0 SysMMU CTRL_VM(0) in its DMA path (Linux leaves 0x25; the kernel
+# clears bit 0 = bypass). bsd/dev/sweet_usb.c (patch 0084) /sweet-usb.
+ST_USB, ST_USB_SIZE = 0x11210000, 0x10000
+ST_USB_SYSMMU_CTRL = 0x11048000
 ST_PANIC_RESET_MS = 3000          # panic -> PSCI SYSTEM_RESET after 3 s
 ST_RESET_AFTER_S = 0              # in-kernel hang reset off: the shim's CPU7 sentinel does it
 # zumapro-cpu.dtsi: cpu0-3 Cortex-A520, cpu4-6 Cortex-A720, cpu7 Cortex-X4,
@@ -265,6 +270,15 @@ def build(seed=None, qemu=False, highmem=False, target='sweet', mem=None, fb=Non
         ('reg', u64(UFS, UFS_SIZE)),
     ])
 
+    # bsd/dev/sweet_usb.c (0084): USB Ethernet + live log on a DWC3 the
+    # previous stage (Linux) left powered, clocked and with its PHY up.
+    st_usb = node('sweet-usb', [
+        ph(),
+        ('compatible', cstr('snps,dwc31')),
+        ('reg', u64(ST_USB, ST_USB_SIZE)),
+        ('sweet-sysmmu-ctrl', u64(ST_USB_SYSMMU_CTRL)),
+    ]) if st else None   # no phandle drawn for sweet: its ADT stays byte-identical
+
     # pmap_compute_max_asids requires the node even when no overrides are set.
     # An absent pmap-max-asids property selects XNU's own MAX_ASIDS default.
     # No effaceable storage: keybagd then reads /private/var/keybags/systembag.kb
@@ -299,7 +313,7 @@ def build(seed=None, qemu=False, highmem=False, target='sweet', mem=None, fb=Non
             ('manufacturer', cstr('Apple Inc.')),
             ('#address-cells', u32(2)),
             ('#size-cells', u32(2)),
-        ], [chosen, defaults, cpus, arm_io, mk_ramlog(), buttons] + product + ([fbcon] if fb else []))
+        ], [chosen, defaults, cpus, arm_io, mk_ramlog(), st_usb, buttons] + product + ([fbcon] if fb else []))
 
     return node('device-tree', [
         ph(),
