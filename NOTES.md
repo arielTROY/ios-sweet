@@ -48,6 +48,9 @@ Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dme
 - PROBE2: PMU+0x3eb0 (USB PHY enable/isolation) bit0 = 1 after handoff -> PHY not isolated.
   USB gadget suspects left: SysMMU in front of DWC3 DMA, VBUS/session override
   (is_not_vbus_pad), eUSB2 repeater (I2C 0x3E), PHY internal state. Next: sweetmem.ko dumps.
+- PROBE3: SysMMU HSI0 0x11040000 CTRL and CTRL_VM(0) bit0 both clear after handoff (93 s, slow
+  path) -> DMA not translated. Host never saw an attach, so the gadget failure is link-level
+  (VBUS session override / eUSB2 repeater / PHY), not DMA.
 - (superseded) **DANGER:** after that watchdog reset the phone sat on the Google logo until the user
   long-pressed power (reason 0xcccc). Watchdog resets are therefore NOT a safe net, and a
   working software reset is not yet known. The first milestone-A image also froze on the logo.
