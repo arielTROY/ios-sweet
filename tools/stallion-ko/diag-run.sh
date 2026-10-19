@@ -8,6 +8,7 @@ rm -f $OUT
 rmmod sweetjump 2>/dev/null
 insmod /data/local/tmp/sweetjump.ko || { echo "insmod failed" > $OUT; exit 1; }
 dmesg -c > /dev/null
+[ -f /data/local/tmp/diag-pre.sh ] && sh /data/local/tmp/diag-pre.sh
 for c in 1 2 3 4 5 6 7; do echo 0 > /sys/devices/system/cpu/cpu$c/online; done
 [ -n "$3" ] && cat "$3" > /proc/sweetpayload
 cat "$1" > /proc/sweetjump

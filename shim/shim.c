@@ -34,6 +34,9 @@
 #ifndef SENTINEL_S
 #define SENTINEL_S		45	/* hard deadline for one shim run */
 #endif
+#ifndef DISPTEST_S
+#define DISPTEST_S		45
+#endif
 #ifndef DIAG_USB_WAIT_S
 #define DIAG_USB_WAIT_S		10
 #endif
@@ -517,6 +520,40 @@ struct diag_ret diag_main(void)
 		}
 	}
 #endif
+#ifdef DIAG_DISP
+	{
+		static const uint32_t dma_base[] = {
+			0x19900000, 0x19901000, 0x19902000, 0x19903000, 0x19904000,
+			0x19905000, 0x19906000, 0x19D00000, 0x19D01000, 0x19D02000,
+			0x19D03000, 0x19D04000, 0x19D05000, 0x19D06000,
+		};
+		static const uint32_t color[] = { 0xffff0000, 0xff00ff00, 0xff0000ff, 0xffffffff };
+		int painted = 0;
+		for (unsigned i = 0; i < sizeof(dma_base) / sizeof(dma_base[0]); i++) {
+			uintptr_t b = dma_base[i];
+			uint32_t size = rd32(b + 0x1c), fmt = rd32(b + 0x08);
+			uint64_t addr = rd32(b + 0x40);
+			if (!size || !addr)
+				continue;
+			uint32_t w = size & 0xffff, h = size >> 16;
+			con_hex2("DPP", "base=", (uint32_t)b, "addr=", (uint32_t)addr);
+			con_hex2("DPPFMT", "fmt=", fmt, "w/h=", (w << 16) | h);
+#ifdef DIAG_DISP_PAINT
+			uint32_t stride = 1088;	/* 0x440: DMA block +0x10 */
+			uint32_t c = color[painted & 3];
+			for (uint32_t y = 0; y < h; y++) {
+				uint32_t band = (y * 8 / h) & 1 ? (c & 0xff7f7f7f) | 0xff000000 : c;
+				volatile uint32_t *row = (volatile uint32_t *)(addr + (uint64_t)y * stride * 4);
+				for (uint32_t x = 0; x < w; x++)
+					row[x] = band;
+			}
+#endif
+			painted++;
+		}
+		con_hex("CHANNELS", painted);
+		con_hex("TRIG_CON", rd32(0x19470030));
+	}
+#endif
 	log_line("SWEET DIAG: returning to Linux");
 	return (struct diag_ret){ (uintptr_t)ramlog, ramlog_len };
 }
@@ -613,6 +650,7 @@ void shim_main(uint64_t dtb, uint64_t ppa, uint64_t plen)
 		__asm__ volatile("wfe");
 #endif
 
+
 	/* Log sink is live before the console: prz needs no setup. */
 	stage = "fdt";
 	uint32_t fb_w = 0, fb_h = 0, fb_stride = 0;
@@ -655,6 +693,64 @@ void shim_main(uint64_t dtb, uint64_t ppa, uint64_t plen)
 	}
 #endif
 
+#ifdef DISPTEST
+	/*
+	 * Display first light without a display driver: Linux (stage 1) leaves
+	 * the DECON scanning the DPP read-DMA channels' last buffers. Find the
+	 * enabled channels (DMA block +0x1c = size, +0x40 = base address),
+	 * paint each with its own color in 8 horizontal bands, and keep the
+	 * watchdogs fed for DISPTEST_S seconds so a person can look at the
+	 * panel. Colors: channel 0 red, 1 green, 2 blue, 3 white (0xAARRGGBB;
+	 * R/B may be swapped by the channel's format).
+	 */
+	{
+		static const uint32_t dma_base[] = {
+			0x19900000, 0x19901000, 0x19902000, 0x19903000, 0x19904000,
+			0x19905000, 0x19906000, 0x19D00000, 0x19D01000, 0x19D02000,
+			0x19D03000, 0x19D04000, 0x19D05000, 0x19D06000,
+		};
+		static const uint32_t color[] = { 0xffff0000, 0xff00ff00, 0xff0000ff, 0xffffffff };
+		int painted = 0;
+		for (unsigned i = 0; i < sizeof(dma_base) / sizeof(dma_base[0]); i++) {
+			uintptr_t b = dma_base[i];
+			con_hex("DPPREAD", b);
+#ifdef SHIM_USBLOG
+			usblog_flush(60);
+#endif
+			uint32_t size = rd32(b + 0x1c), fmt = rd32(b + 0x08);
+			uint64_t addr = rd32(b + 0x40);
+			if (!size || !addr)
+				continue;
+			uint32_t w = size & 0xffff, h = size >> 16;
+			con_hex2("DPP", "base=", (uint32_t)b, "addr=", (uint32_t)addr);
+			con_hex2("DPPFMT", "fmt=", fmt, "w/h=", (w << 16) | h);
+			uint32_t stride = (w + 7) & ~7u;	/* Linux pads to 1088 */
+			uint32_t c = color[painted & 3];
+			for (uint32_t y = 0; y < h; y++) {
+				/* 8 bands: every other band darker, so a wrong stride shows as skew */
+				uint32_t band = (y * 8 / h) & 1 ? (c & 0xff7f7f7f) | 0xff000000 : c;
+				volatile uint32_t *row = (volatile uint32_t *)(addr + (uint64_t)y * stride * 4);
+				for (uint32_t x = 0; x < w; x++)
+					row[x] = band;
+				if ((y & 63) == 0)
+					wdt_kick();
+			}
+			painted++;
+		}
+		con_hex("PAINTED", painted);
+		uint64_t f = rsr("cntfrq_el0");
+		uint64_t end = now() + (f ? f : 24576000) * DISPTEST_S;
+		while (now() < end) {
+			wdt_kick();
+#ifdef SHIM_USBLOG
+			usblog_poll();
+#endif
+		}
+		smc(PSCI_SYSTEM_RESET, 0, 0, 0);
+		for (;;)
+			__asm__ volatile("wfe");
+	}
+#endif
 	/* The whole ABL FDT goes to the prz log: node names + reg/compatible. */
 	stage = "fdt dump";
 #ifndef NO_FDT_DUMP	/* timing-log builds: keep the line count small */

@@ -35,7 +35,23 @@ Nothing has run on hardware. The init sequence, failure-mode list and the Exynos
 (not used yet) are in the header comment of usblog.c. Opt-in extras: `-DUSBLOG_PD_PROBE` (pd_hsi0
 status via the PMU-read SMC), `-DUSBLOG_FORCE_FS`.
 
-### >>> UPDATE 2026-10-19 14:15 (stallion: XNU READS THE PHONE'S UFS — read first) <<<
+### >>> UPDATE 2026-10-19 14:30 (stallion: display first-light in progress; usage limit hit) <<<
+
+Display: with Android's screen on and idle, ONE DPP read-DMA channel is live: L0 @0x19900000,
+buffer base = reg +0x40 (was 0xFA000000), size reg +0x1c = 0x09780438 (1080x2424), padded
+width 0x440 (+0x10), fmt reg +0x08 = 0xFF400108, DECON TRIG_CON 0x19470030 = 0x3070. Under
+load Android flips 3 layers (L0/L2/L7). Idea: Linux leaves DECON scanning that buffer, so XNU/shim
+can write pixels there with no display driver (mirror to all active layers if needed).
+Tests built, NOT yet seen on the panel: shim -DSHIM_DIAG -DDIAG_DISP (read-only probe, works,
+logs/diagdisp0.txt) and -DDIAG_DISP_PAINT (paints; the last two runs of tools/stallion-diag.sh
+produced no output because the script's kernel check `cat /proc/cmdline | grep mem=3G` failed
+and the phone was on the normal pKVM kernel -> fix: boot the nokvm image explicitly first).
+Non-returning -DDISPTEST variants lose their USB log (cause unknown); use diag mode.
+STILL BLOCKED ON USER: external drive for the iOS root build (not visible as a disk), and
+Android reformat caution below. GPU: iOS has no Mali userland; software rendering (like sweet)
+is the realistic path. Wi-Fi (BCM4383 over PCIe) not started; USB Ethernet works meanwhile.
+
+### >>> UPDATE 2026-10-19 14:15 (stallion: XNU READS THE PHONE'S UFS) <<<
 
 xnu 0087-0089 + ADT `/sweet-ufs` (Exynos UFSHCI 0x13200000, mkadt stallion): with boot-arg
 `rd=ufsroot0 sweetkeys=0 sweettouch=0` XNU's own UFS driver finds partitions by GPT name and

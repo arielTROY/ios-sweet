@@ -29,6 +29,7 @@ adb push -q tools/stallion-ko/out/sweetjump.ko tools/stallion-ko/diag-run.sh "$I
 # Detached, so a USB reset during the test doesn't kill it; the result is
 # a file we fetch once adb is back (diag-run.sh rebinds the USB gadget).
 PARG=""
+if [ -n "${DIAG_PRE:-}" ]; then printf "%s\n" "$DIAG_PRE" > /tmp/diag-pre.sh; adb push -q /tmp/diag-pre.sh /data/local/tmp/diag-pre.sh; else adb shell "rm -f /data/local/tmp/diag-pre.sh"; fi
 if [ -n "${PAYLOAD:-}" ]; then
 	adb push -q "$PAYLOAD" /data/local/tmp/payload.bin || exit 1
 	PARG=/data/local/tmp/payload.bin
