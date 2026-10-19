@@ -1,0 +1,116 @@
+sweet ufs: one 4 KiB block per command
+
+On the Exynos UFSHCI (stallion) a multi-block READ returned only the
+first block, with PRDT entries of 256 KiB (0087) and of 4 KiB (0088), so
+the GPT entries 33/34 ("super", "userdata") stayed invisible. Issue one
+single-block command per 4 KiB with a single PRDT entry, the form the
+bare-metal shim already reads correctly. Slower; to be revisited when the
+host's descriptor layout is understood.
+
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -151,11 +151,11 @@
+  * (to the device when write is set). Returns 0 or an errno.
+  */
+ static int
+-ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
++ufs_scsi_at(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write, uint32_t boff)
+ {
+ 	struct utrd *utrd = (struct utrd *)(su.dma + DMA_UTRL);
+ 	struct ucd *ucd = (struct ucd *)(su.dma + DMA_UCD);
+-	uint64_t ucd_pa = su.dma_pa + DMA_UCD, bounce_pa = su.dma_pa + DMA_BOUNCE;
++	uint64_t ucd_pa = su.dma_pa + DMA_UCD, bounce_pa = su.dma_pa + DMA_BOUNCE + boff;
+ 
+ 	assert(len <= BOUNCE_SIZE);
+ 	bzero(utrd, sizeof(*utrd));
+@@ -202,9 +202,9 @@
+ 	}
+ 	if (len) {
+ 		if (su.cache && write) {
+-			dma_clean(DMA_BOUNCE, len);
++			dma_clean(DMA_BOUNCE + boff, len);
+ 		} else {
+-			dma_sync(DMA_BOUNCE, len);
++			dma_sync(DMA_BOUNCE + boff, len);
+ 		}
+ 	}
+ 	__builtin_arm_dsb(0xf);
+@@ -249,7 +249,7 @@
+ 		dma_sync(DMA_UCD, sizeof(*ucd));
+ 	}
+ 	if (len && !(su.cache && write)) {
+-		dma_sync(DMA_BOUNCE, len);
++		dma_sync(DMA_BOUNCE + boff, len);
+ 	}
+ 
+ 	uint32_t ocs = utrd->dw2 & 0xff;
+@@ -261,6 +261,12 @@
+ 	return 0;
+ }
+ 
++static int
++ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
++{
++	return ufs_scsi_at(cdb, cdb_len, len, write, 0);
++}
++
+ /* READ(10) of count device blocks at lba into the bounce buffer. */
+ static int
+ ufs_read_blocks(uint64_t lba, uint32_t count)
+@@ -268,12 +274,24 @@
+ 	if (lba > UINT32_MAX || count > BOUNCE_SIZE / UFS_BLOCK) {
+ 		return EINVAL;
+ 	}
+-	uint8_t cdb[10] = {
+-		0x28, 0,
+-		(uint8_t)(lba >> 24), (uint8_t)(lba >> 16), (uint8_t)(lba >> 8), (uint8_t)lba,
+-		0, (uint8_t)(count >> 8), (uint8_t)count, 0
+-	};
+-	return ufs_scsi(cdb, sizeof(cdb), count * UFS_BLOCK, false);
++	/*
++	 * One 4 KiB block per command with a single PRDT entry: the Exynos
++	 * UFSHCI (stallion) returned only the first block of multi-block
++	 * reads (with 256 KiB and with 4 KiB PRDT entries alike).
++	 */
++	for (uint32_t i = 0; i < count; i++) {
++		uint64_t l = lba + i;
++		uint8_t cdb[10] = {
++			0x28, 0,
++			(uint8_t)(l >> 24), (uint8_t)(l >> 16), (uint8_t)(l >> 8), (uint8_t)l,
++			0, 0, 1, 0
++		};
++		int error = ufs_scsi_at(cdb, sizeof(cdb), UFS_BLOCK, false, i * UFS_BLOCK);
++		if (error) {
++			return error;
++		}
++	}
++	return 0;
+ }
+ 
+ /*
+@@ -289,12 +307,19 @@
+ 		printf("SWEET UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
+ 		return EPERM;
+ 	}
+-	uint8_t cdb[10] = {
+-		0x2a, 0,
+-		(uint8_t)(lba >> 24), (uint8_t)(lba >> 16), (uint8_t)(lba >> 8), (uint8_t)lba,
+-		0, (uint8_t)(count >> 8), (uint8_t)count, 0
+-	};
+-	return ufs_scsi(cdb, sizeof(cdb), count * UFS_BLOCK, true);
++	for (uint32_t i = 0; i < count; i++) {
++		uint64_t l = lba + i;
++		uint8_t cdb[10] = {
++			0x2a, 0,
++			(uint8_t)(l >> 24), (uint8_t)(l >> 16), (uint8_t)(l >> 8), (uint8_t)l,
++			0, 0, 1, 0
++		};
++		int error = ufs_scsi_at(cdb, sizeof(cdb), UFS_BLOCK, true, i * UFS_BLOCK);
++		if (error) {
++			return error;
++		}
++	}
++	return 0;
+ }
+ 
+ static int
