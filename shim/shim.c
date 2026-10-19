@@ -487,6 +487,20 @@ struct diag_ret diag_main(void)
 	wr32(SYSMMU_HSI0_CTRL_VM0, smmu);
 	__asm__ volatile("dsb sy" ::: "memory");
 #endif
+#ifdef DIAG_LOADER
+	/* Loader dry run against a payload sweetjump placed at the staging
+	 * address (it passes x1/x2 to the image; diag reads the header). */
+	{
+		extern uintptr_t loader_staged;
+		const char *m = (const char *)0x9b0000000UL;
+		if (m[0] == 'S' && m[1] == 'W' && m[5] == 'X') {
+			loader_staged = 0x9b0000000UL;
+			con_str("LOADER", loader_boot(0x8a000000UL));
+		} else {
+			con_str("LOADER", "no payload at 0x9b0000000");
+		}
+	}
+#endif
 	log_line("SWEET DIAG: returning to Linux");
 	return (struct diag_ret){ (uintptr_t)ramlog, ramlog_len };
 }
@@ -500,8 +514,29 @@ struct diag_ret diag_main(void)
  * Then a plain PSCI reset boots Android again so the log can be pulled
  * from /sys/fs/pstore over adb.
  */
-void shim_main(uint64_t dtb)
+/*
+ * Linux launch (sweetjump): the module already copied the XNU payload to
+ * its staging address (x1, length x2) in RAM Linux never owned (mem=3G).
+ * ABL launches pass x1 = x2 = 0.
+ */
+extern uintptr_t loader_staged;
+static uint64_t payload_len;
+
+extern int loader_preplaced;
+
+static void take_payload(uint64_t pa, uint64_t len)
 {
+	loader_preplaced = (len >> 63) & 1;	/* sweetjump placed the segments */
+	len &= ~(1ULL << 63);
+	if (pa >= 0x9b0000000UL && pa < 0x9bd000000UL && len && len <= 0x0d000000UL) {
+		loader_staged = pa;
+		payload_len = len;
+	}
+}
+
+void shim_main(uint64_t dtb, uint64_t ppa, uint64_t plen)
+{
+	take_payload(ppa, plen);
 #if defined(PSTORE1) || defined(PSTORE2)
 	/* Does the ramoops console prz survive our exit? PSTORE1 ends in a
 	 * PSCI reset, PSTORE2 in ABL's watchdog. Read back from Android:
@@ -573,6 +608,14 @@ void shim_main(uint64_t dtb)
 
 	con_clear(RED);
 	con_str("SHIM", "stallion milestone A: recon");
+	con_hex2("PAYLOAD", "len=", (uint32_t)payload_len, "at>>4=", (uint32_t)(loader_staged >> 4));
+	if (loader_staged) {
+		/* Transport check: 64-bit sum of the gathered bytes. */
+		uint64_t sum = 0;
+		for (uint64_t i = 0; i < payload_len / 8; i++)
+			sum += ((volatile uint64_t *)loader_staged)[i];
+		con_hex("PAYSUM", sum);
+	}
 	con_hex2("SENTINEL", "cpu_on=", (uint32_t)sret, "s=", SENTINEL_S);
 	con_hex2("DTB", "at=", dtb, "magic=", dtb ? __builtin_bswap32(rd32(dtb)) : 0);
 	con_hex2("FB", "fdt=", fb, "w/h=", (fb_w << 16) | (fb_h & 0xffff));

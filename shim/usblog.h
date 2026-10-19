@@ -23,6 +23,7 @@ void usblog_write(const char *s, unsigned n);
 int usblog_connected(void);
 /* Poll until everything queued was sent or ms elapsed. */
 void usblog_flush(unsigned ms);
+int usblog_wait_host(unsigned ms);
 /* Disconnect and halt the controller so it stops DMA into the shim's
  * memory (call before handing the machine to another kernel). */
 void usblog_stop(void);

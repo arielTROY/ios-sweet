@@ -962,6 +962,21 @@ int usblog_connected(void)
 	return u.configured;
 }
 
+/* Poll until the host has configured us and opened the port (DTR), or
+ * ms elapse. Returns 1 if connected. */
+int usblog_wait_host(unsigned ms)
+{
+	if (!u.ready)
+		return 0;
+	uint64_t end = ticks() + us_ticks(ms > 60000 ? 60000000 : ms * 1000);
+	for (uint64_t i = 0; i < SPIN_CAP(ms * 1000) && ticks() < end; i++) {
+		usblog_poll();
+		if (usblog_connected())
+			return 1;
+	}
+	return usblog_connected();
+}
+
 void usblog_flush(unsigned ms)
 {
 	if (!u.ready)

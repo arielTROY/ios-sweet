@@ -31,10 +31,15 @@
 #include <linux/cpumask.h>
 #include <linux/string.h>
 #include <linux/kstrtox.h>
+#include <linux/io.h>
 #include <asm/virt.h>
 
-#define SJ_MAX		(4UL << 20)	/* alloc_pages() order 10 */
+#define SJ_MAX		(4UL << 20)	/* room at SJ_SHIM_PA */
 
+#define SP_MAX		(208UL << 20)	/* shim's PAYLOAD_MAXPG */
+static u8 *sp_buf;			/* /proc/sweetpayload: XNU payload */
+static size_t sp_len;
+static struct proc_dir_entry *sp_proc;
 static u8 *sj_img;			/* vmalloc staging buffer */
 static size_t sj_len;
 static struct proc_dir_entry *sj_proc;
@@ -54,13 +59,13 @@ static void sj_clean_poc(void *start, size_t len)
  * SHIM_DIAG, x0 = DIAG_MAGIC) eret back here with x0 = phys addr of
  * their RAM log and x1 = its length.
  */
-static u64 sj_go(phys_addr_t entry, u64 arg, u64 *len)
+static u64 sj_go(phys_addr_t entry, u64 arg, u64 list, u64 npages, u64 *len)
 {
 	register u64 x0 asm("x0") = HVC_SOFT_RESTART;
 	register u64 x1 asm("x1") = entry;
 	register u64 x2 asm("x2") = arg;	/* becomes the image's x0 */
-	register u64 x3 asm("x3") = 0;
-	register u64 x4 asm("x4") = 0;
+	register u64 x3 asm("x3") = list;	/* image's x1 */
+	register u64 x4 asm("x4") = npages;	/* image's x2 */
 
 	asm volatile("msr daifset, #0xf\n"
 		     "ic iallu\n"
@@ -74,18 +79,11 @@ static u64 sj_go(phys_addr_t entry, u64 arg, u64 *len)
 	return x0;
 }
 
-static void sj_print_log(struct page *pg, size_t alloc, u64 pa, u64 len)
+static void sj_print_text(char *p, size_t len)
 {
-	phys_addr_t base = page_to_phys(pg);
-	char *p, *end, *nl;
+	char *end = p + len, *nl;
 
-	if (pa < base || len > alloc || pa + len > base + alloc) {
-		pr_err("sweetjump: returned log %llx+%llx outside image\n", pa, len);
-		return;
-	}
-	p = (char *)page_address(pg) + (pa - base);
-	end = p + len;
-	sj_clean_poc(p, len);	/* written with the MMU off: drop stale lines */
+	sj_clean_poc(p, len);	/* written with the MMU off */
 	while (p < end) {
 		nl = memchr(p, '\n', end - p);
 		if (!nl)
@@ -141,15 +139,110 @@ static int sj_cmd_call(u64 arg)
 	return 0;
 }
 
+/*
+ * The debug kernel runs with mem=3G, so Linux never owns RAM at or above
+ * 0x8c0000000. Images and the XNU payload go there directly (memremap of
+ * non-Linux RAM): no contiguous allocation needed. Layout (see shim.c):
+ *   0x8c0000000 .. 0x9b0000000  XNU's RAM window
+ *   0x9b0000000 .. 0x9bd000000  payload staging (208 MiB)
+ *   0x9bd000000 .. +4 MiB       the shim image
+ */
+#define SJ_SHIM_PA	0x9bd000000ULL
+#define SJ_PAYLOAD_PA	0x9b0000000ULL
+
+static int sj_place(phys_addr_t pa, const void *src, size_t len)
+{
+	void *dst = memremap(pa, len, MEMREMAP_WB);
+
+	if (!dst) {
+		pr_err("sweetjump: memremap %pa+%zx failed\n", &pa, len);
+		return -ENOMEM;
+	}
+	/* memremap() of Linux-owned RAM returns its linear-map address (the
+	 * low half of the kernel VA space on arm64); anything else gets a
+	 * fresh vmalloc-area mapping. Never overwrite Linux's own RAM. */
+	if ((u64)dst - PAGE_OFFSET < (1ULL << (CONFIG_ARM64_VA_BITS - 1))) {
+		memunmap(dst);
+		pr_err("sweetjump: %pa is Linux RAM: boot with mem=3G\n", &pa);
+		return -EBUSY;
+	}
+	memcpy(dst, src, len);
+	sj_clean_poc(dst, len);
+	memunmap(dst);
+	return 0;
+}
+
+/*
+ * XNU payload (tools/mkpayload.py "SWEETXNU" layout, see shim/loader.c):
+ * place the kernel segments and the ADT at their final physical addresses
+ * here, with caches on (the shim's MMU-off copy takes ~90 s for 16 MiB,
+ * longer than Linux's 30 s watchdogs). The shim then only builds
+ * boot_args and jumps (bit 63 of its x2 = "already placed").
+ */
+struct sj_seg { u64 vmaddr, vmsize, file_off, file_size; };
+struct sj_payload {
+	char magic[8];
+	u32 version, nsegs;
+	u64 virt_base, entry_va, adt_off, adt_size, kernel_end;
+	u64 phys_base, mem_size;
+	char cmdline[608];
+	struct sj_seg segs[];
+};
+#define SJ_PLACED	(1ULL << 63)
+
+static int sj_place_zero(phys_addr_t pa, size_t len)
+{
+	void *dst = memremap(pa, len, MEMREMAP_WB);
+
+	if (!dst)
+		return -ENOMEM;
+	memset(dst, 0, len);
+	sj_clean_poc(dst, len);
+	memunmap(dst);
+	return 0;
+}
+
+static int sj_place_xnu(void)
+{
+	const struct sj_payload *p = (const void *)sp_buf;
+	u64 off = p->phys_base - p->virt_base;	/* pa = va + off */
+	u32 i;
+	int rc;
+
+	if (sp_len < sizeof(*p) || memcmp(p->magic, "SWEETXNU", 8) || p->nsegs > 64 ||
+	    p->phys_base < 0x8c0000000ULL || p->phys_base + p->mem_size > SJ_PAYLOAD_PA)
+		return -EINVAL;
+	for (i = 0; i < p->nsegs; i++) {
+		const struct sj_seg *sg = &p->segs[i];
+
+		if (sg->file_off + sg->file_size > sp_len || sg->file_size > sg->vmsize)
+			return -EINVAL;
+		rc = sj_place(sg->vmaddr + off, sp_buf + sg->file_off, sg->file_size);
+		if (!rc && sg->vmsize > sg->file_size)
+			rc = sj_place_zero(sg->vmaddr + off + sg->file_size,
+					   sg->vmsize - sg->file_size);
+		if (rc)
+			return rc;
+	}
+	if (p->adt_off + p->adt_size > sp_len)
+		return -EINVAL;
+	rc = sj_place(p->kernel_end + off, sp_buf + p->adt_off, p->adt_size);
+	if (!rc)
+		pr_info("sweetjump: placed %u xnu segments + ADT at %llx\n",
+			p->nsegs, p->phys_base);
+	return rc;
+}
+
 static int sj_cmd_go(u64 arg)
 {
-	struct page *pg;
-	unsigned int order;
-	void *dst;
-	u64 el;
+	unsigned long flags;
+	u64 el, ret, len = 0, placed = 0;
+	int rc;
 
-	if (!sj_img || !sj_len)
+	if (!sj_img || !sj_len) {
+		pr_err("sweetjump: go: no image staged\n");
 		return -ENODATA;
+	}
 	if (num_online_cpus() != 1) {
 		pr_err("sweetjump: %u CPUs online; offline all but one first\n",
 		       num_online_cpus());
@@ -161,28 +254,35 @@ static int sj_cmd_go(u64 arg)
 		       (el >> 2) & 3);
 		return -EOPNOTSUPP;
 	}
+	rc = sj_place(SJ_SHIM_PA, sj_img, sj_len);
+	if (!rc && sp_len)
+		rc = sj_place(SJ_PAYLOAD_PA, sp_buf, sp_len);
+	if (rc)
+		return rc;
+	if (sp_len && !memcmp(sp_buf, "SWEETXNU", 8)) {
+		rc = sj_place_xnu();
+		if (rc) {
+			pr_err("sweetjump: xnu placement failed: %d\n", rc);
+			return rc;
+		}
+		placed = SJ_PLACED;
+	}
 
-	order = get_order(sj_len);
-	pg = alloc_pages(GFP_KERNEL | __GFP_NOWARN, order);
-	if (!pg)
-		return -ENOMEM;
-	dst = page_address(pg);
-	memcpy(dst, sj_img, sj_len);
-	sj_clean_poc(dst, sj_len);
+	pr_info("sweetjump: image %zu bytes at %llx, payload %zu bytes at %llx, x0=%llx: jumping\n",
+		sj_len, SJ_SHIM_PA, sp_len, sp_len ? SJ_PAYLOAD_PA : 0, arg);
+	local_irq_save(flags);
+	/* image x1 = payload PA (already in place), x2 = its length */
+	ret = sj_go(SJ_SHIM_PA, arg, sp_len ? SJ_PAYLOAD_PA : 0, sp_len | placed, &len);
+	asm volatile("msr daifclr, #0xf" : : : "memory");
+	local_irq_restore(flags);
+	pr_info("sweetjump: image returned x0=%llx x1=%llx\n", ret, len);
+	if (ret >= SJ_SHIM_PA && len && ret + len <= SJ_SHIM_PA + SJ_MAX) {
+		void *log = memremap(ret, len, MEMREMAP_WB);
 
-	pr_info("sweetjump: %zu bytes at phys %pa, x0=%llx: jumping\n",
-		sj_len, &(phys_addr_t){ page_to_phys(pg) }, arg);
-	{
-		unsigned long flags;
-		u64 ret, len = 0;
-
-		local_irq_save(flags);
-		ret = sj_go(page_to_phys(pg), arg, &len);
-		asm volatile("msr daifclr, #0xf" : : : "memory");
-		local_irq_restore(flags);
-		pr_info("sweetjump: image returned x0=%llx x1=%llx\n", ret, len);
-		sj_print_log(pg, PAGE_SIZE << order, ret, len);
-		__free_pages(pg, order);
+		if (log) {
+			sj_print_text(log, len);
+			memunmap(log);
+		}
 	}
 	return 0;
 }
@@ -245,6 +345,29 @@ static ssize_t sj_write(struct file *f, const char __user *ubuf,
 	return count;
 }
 
+static ssize_t sp_write(struct file *f, const char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	if (!sp_buf) {
+		sp_buf = vmalloc(SP_MAX);
+		if (!sp_buf)
+			return -ENOMEM;
+	}
+	if (*ppos == 0)
+		sp_len = 0;	/* a fresh open+write replaces the payload */
+	if (sp_len + count > SP_MAX)
+		return -EFBIG;
+	if (copy_from_user(sp_buf + sp_len, ubuf, count))
+		return -EFAULT;
+	sp_len += count;
+	*ppos += count;
+	return count;
+}
+
+static const struct proc_ops sp_ops = {
+	.proc_write = sp_write,
+};
+
 static const struct proc_ops sj_ops = {
 	.proc_write = sj_write,
 };
@@ -254,13 +377,20 @@ static int __init sj_init(void)
 	sj_proc = proc_create("sweetjump", 0200, NULL, &sj_ops);
 	if (!sj_proc)
 		return -ENOMEM;
+	sp_proc = proc_create("sweetpayload", 0200, NULL, &sp_ops);
+	if (!sp_proc) {
+		remove_proc_entry("sweetjump", NULL);
+		return -ENOMEM;
+	}
 	pr_info("sweetjump: loaded: /proc/sweetjump (stage image, then \"go <x0>\")\n");
 	return 0;
 }
 
 static void __exit sj_exit(void)
 {
+	remove_proc_entry("sweetpayload", NULL);
 	remove_proc_entry("sweetjump", NULL);
+	vfree(sp_buf);
 	vfree(sj_img);
 }
 

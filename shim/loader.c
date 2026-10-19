@@ -78,6 +78,7 @@ static int magic_ok(const char *m)
 }
 
 typedef void (*xnu_entry_t)(uint64_t boot_args_pa);
+void wdt_kick(void);
 
 extern char _end[];
 extern char _head[];
@@ -91,6 +92,11 @@ void sentinel_kick(unsigned s);
 #endif
 
 #ifdef TARGET_STALLION
+/* Set by shim.c when sweetjump staged the payload (and, with
+ * loader_preplaced, already copied segments + ADT to their final place). */
+uintptr_t loader_staged;
+int loader_preplaced;
+
 /* Pixel fastboot ignores the ramdisk we send: the payload is appended to
  * our own Image right after _end (8-aligned). Scan for its magic. */
 static const struct payload *find_embedded(void)
@@ -115,7 +121,9 @@ const char *loader_boot(uintptr_t dtb)
 	const struct payload *p = 0;
 
 #ifdef TARGET_STALLION
-	p = find_embedded();
+	/* Launched from Linux: only the payload we were handed counts (a
+	 * scan could match a stale copy in Linux's page cache). */
+	p = loader_staged ? (const struct payload *)loader_staged : find_embedded();
 	if (p) {
 		/* Payload end: the furthest segment or the ADT. */
 		uint64_t end = p->adt_off + p->adt_size;
@@ -164,9 +172,10 @@ const char *loader_boot(uintptr_t dtb)
 	uint32_t fb_w = FB_W, fb_h = FB_H, fb_stride = FB_STRIDE;
 #endif
 
-	for (uint32_t i = 0; i < p->nsegs; i++) {
+	for (uint32_t i = 0; i < p->nsegs && !loader_preplaced; i++) {
 		const struct payload_seg *s = &p->segs[i];
 		uintptr_t dst = s->vmaddr + pa_of_va_base;
+		wdt_kick();
 		copy64(dst, rd_start + s->file_off, s->file_size);
 		if (s->vmsize > s->file_size)
 			zero64(dst + ((s->file_size + 7) & ~7UL), s->vmsize - ((s->file_size + 7) & ~7UL));
@@ -175,7 +184,9 @@ const char *loader_boot(uintptr_t dtb)
 
 	/* ADT, then boot_args, behind the kernel; everything below topOfKernelData is ours. */
 	uintptr_t adt_pa = p->kernel_end + pa_of_va_base;
-	copy64(adt_pa, rd_start + p->adt_off, p->adt_size);
+	if (!loader_preplaced)
+		copy64(adt_pa, rd_start + p->adt_off, p->adt_size);
+	con_str("PLACED", loader_preplaced ? "by sweetjump (Linux)" : "by the shim");
 	uintptr_t ba_pa = (adt_pa + p->adt_size + PAGE_16K - 1) & ~(PAGE_16K - 1);
 	uintptr_t top = ba_pa + PAGE_16K;
 
@@ -203,6 +214,14 @@ const char *loader_boot(uintptr_t dtb)
 
 	uintptr_t entry_pa = p->entry_va + pa_of_va_base;
 	con_hex("JUMP", entry_pa);
+#ifdef SHIM_DIAG
+	/* Diag dry run: everything is in place; don't jump. */
+	{
+		volatile uint32_t *e = (volatile uint32_t *)entry_pa;
+		con_hex2("ENTRY", "w0=", e[0], "w1=", e[1]);
+	}
+	return "diag dry run: not jumping";
+#endif
 	con_str("XNU", "jumping (fbcon clears screen)");
 #ifdef TARGET_STALLION
 	con_hex2("XNUFB", "pa=", fb, "w/h=", (fb_w << 16) | (fb_h & 0xffff));
@@ -210,7 +229,10 @@ const char *loader_boot(uintptr_t dtb)
 #endif
 
 #ifdef SHIM_USBLOG
-	/* The DWC3 DMAs into the shim's .bss; halt it before xnu owns memory. */
+	/* Let the host open the port and drain the log (bounded), then halt
+	 * the DWC3: it DMAs into the shim's .bss, which xnu must not see. */
+	usblog_wait_host(8000);
+	usblog_flush(3000);
 	usblog_stop();
 #endif
 	/* Everything was written with the MMU and caches off; drop any stale I-cache lines too. */

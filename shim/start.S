@@ -412,6 +412,8 @@ _start:
 	b	.
 #endif
 	mov	x19, x0			/* DTB pointer from ABL */
+	mov	x20, x1			/* sweetjump: payload page list (PA) */
+	mov	x21, x2			/* sweetjump: number of pages */
 #ifdef TARGET_STALLION
 	/* Pixel ABL enters at EL2 (arm64 boot protocol). Drop to EL1h so
 	 * the rest of the shim runs the same as on Qualcomm's EL1 entry. */
@@ -464,6 +466,8 @@ _start:
 	str	xzr, [x1], #8
 	b	1b
 2:	mov	x0, x19
+	mov	x1, x20
+	mov	x2, x21
 	bl	shim_main
 3:	wfe
 	b	3b
@@ -485,7 +489,17 @@ sentinel_entry:
 	orr	x9, x9, #3
 	msr	cnthctl_el2, x9
 1:	adr	x2, sentinel_deadline
+	movz	x10, #0x0008
+	movk	x10, #0x1006, lsl #16	/* WDT cl0 WTCNT */
+	movz	x11, #0x0008
+	movk	x11, #0x1007, lsl #16	/* WDT cl1 WTCNT */
+	movz	w12, #0xffff
 2:	isb
+	/* Until the deadline keep whoever armed the watchdogs (ABL, or
+	 * Linux's 30 s ones when sweetjump launched us) from resetting the
+	 * phone under a kernel that doesn't feed them (XNU). */
+	str	w12, [x10]
+	str	w12, [x11]
 	ldr	x1, [x2]
 	cbz	x1, 2b
 	mrs	x3, cntpct_el0

@@ -1,6 +1,7 @@
 #!/system/bin/sh
 # On-phone half of tools/stallion-diag.sh (runs as root, detached).
-# $1 = image file in /data/local/tmp, $2 = x0 for the image (hex).
+# $1 = image file in /data/local/tmp, $2 = x0 for the image (hex),
+# $3 = optional payload file (staged at 0x9b0000000 by sweetjump).
 cd /data/local/tmp || exit 1
 OUT=/data/local/tmp/diag-out.txt
 rm -f $OUT
@@ -8,6 +9,7 @@ rmmod sweetjump 2>/dev/null
 insmod /data/local/tmp/sweetjump.ko || { echo "insmod failed" > $OUT; exit 1; }
 dmesg -c > /dev/null
 for c in 1 2 3 4 5 6 7; do echo 0 > /sys/devices/system/cpu/cpu$c/online; done
+[ -n "$3" ] && cat "$3" > /proc/sweetpayload
 cat "$1" > /proc/sweetjump
 echo "go $2" > /proc/sweetjump
 for c in 1 2 3 4 5 6 7; do echo 1 > /sys/devices/system/cpu/cpu$c/online; done
