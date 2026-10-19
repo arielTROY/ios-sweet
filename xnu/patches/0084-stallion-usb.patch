@@ -1,0 +1,385 @@
+stallion: DWC_usb31 USB Ethernet + live log (ADT /sweet-usb)
+
+Runs the sweet USB stack of 0072-0077 (DWC3 device mode, ep0, CDC-ECM
+ue0 192.168.7.2, UDP live log to 192.168.7.1:5140) on the Pixel 10a
+"stallion" (DWC_usb31 1.30a at 0x11210000), with XNU started from Linux
+(sweetjump) so PHY/repeater/VBUS/clocks/power are already up.
+
+- Board selection at run time from the ADT: node /sweet-usb
+  (tools/mkadt.py --target stallion) with reg = <u64 phys, u64 size> and
+  optional sweet-sysmmu-ctrl = <u64 phys of the SysMMU CTRL_VM(0)>.
+  Sweet's ADT has no such node: the Qualcomm path (GCC/QUSB2 probe,
+  QSCRATCH VBUS override, plain CSFTRST) is unchanged.
+- DWC_usb31 take-over as shim/usblog.c (worked on the phone): stop
+  Linux's running session, SysMMU CTRL_VM(0) bit 0 off (bypass), GCTL
+  device role, DCTL.CSFTRST with Linux's global registers snapshotted and
+  restored, 50 ms + 100 ms settle; GUSB2PHYCFG0 SUSPHY/ENBLSLPM cleared
+  around every endpoint command (serialized by a mutex); XferNotReady
+  status phase decoded as (status & 3); the DMA area is cleaned once
+  before use. No Qualcomm GCC/GDSC/QUSB2/QSCRATCH access on stallion.
+- Started once from IOFindBSDRoot (before the root device lookup, so it
+  does not depend on a UFS root) or from sweet_usb_probe(), whichever
+  comes first. sweetusb defaults to 2 (gadget) on /sweet-usb boards;
+  sweetusb=0 off, 1 register dump only; sweetusblog=0 as before.
+
+--- a/bsd/dev/sweet_usb.c
++++ b/bsd/dev/sweet_usb.c
+@@ -33,9 +33,12 @@
+ #include <net/kpi_interface.h>
+ #include <net/kpi_protocol.h>
+ #include <netinet/in.h>
++#include <pexpert/device_tree.h>
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ void sweet_usb_probe(void);
++void sweet_usb_board_start(void);
++static bool sweet_usb_dt_probe(void);
+ static void sweet_usb_gadget_start(vm_offset_t dwc);
+ extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
+ 
+@@ -77,6 +80,10 @@
+ 	uint32_t gdscr, cbcr[sizeof(usb_cbcr) / sizeof(usb_cbcr[0])];
+ 	bool clocks_on = true;
+ 
++	/* ADT /sweet-usb (stallion): DWC_usb31 path, none of the Qualcomm blocks below. */
++	if (sweet_usb_dt_probe()) {
++		return;
++	}
+ 	/* sweetusb=0 off, 1 (default) report state only, 2 also start the USB device */
+ 	PE_parse_boot_argn("sweetusb", &enabled, sizeof(enabled));
+ 	if (!enabled) {
+@@ -233,6 +240,9 @@
+ 	unsigned    txq_head, txq_count;
+ 	bool        tx_busy;
+ 	uint64_t    rx_frames, tx_frames;
++	/* ADT /sweet-usb board (stallion, DWC_usb31): see sweet_usb_dt_probe() */
++	bool        dwc31;
++	lck_mtx_t  *cmd_lock;       /* GUSB2PHYCFG save/restore around DEPCMD */
+ } ud;
+ 
+ static inline void
+@@ -263,9 +273,63 @@
+ 	thread_block(THREAD_CONTINUE_NULL);
+ }
+ 
++/*
++ * DWC_usb31 (stallion): no endpoint command while the USB2 PHY may be
++ * suspended (databook 6.3.2.5; Linux dwc3_send_gadget_ep_cmd). Linux leaves
++ * GUSB2PHYCFG0 SUSPHY|ENBLSLPM set (0x00102540), so clear them around each
++ * command and put them back, as shim/usblog.c ep_cmd() does (worked on the
++ * phone). cmd_lock: the TX path (ud.lock held) and ud_thread both issue
++ * commands, and the read-modify-write of GUSB2PHYCFG0 must not interleave.
++ */
++#define GUSB2PHYCFG0            0xc200
++#define USB2PHYCFG_SUSPHY       (1u << 6)
++#define USB2PHYCFG_ENBLSLPM     (1u << 8)
++
+ static int
++ud_epcmd31(unsigned ep, uint32_t cmd, uint32_t p0, uint32_t p1, uint32_t p2)
++{
++	int rc = -1;
++	int i;
++
++	lck_mtx_lock(ud.cmd_lock);
++	uint32_t phy = dwc_rd(GUSB2PHYCFG0);
++	bool restore = (phy & (USB2PHYCFG_SUSPHY | USB2PHYCFG_ENBLSLPM)) != 0;
++	if (restore) {
++		dwc_wr(GUSB2PHYCFG0, phy & ~(USB2PHYCFG_SUSPHY | USB2PHYCFG_ENBLSLPM));
++	}
++	dwc_wr(DEPCMDPAR0(ep), p0);
++	dwc_wr(DEPCMDPAR1(ep), p1);
++	dwc_wr(DEPCMDPAR2(ep), p2);
++	dwc_wr(DEPCMD(ep), cmd | DEPCMD_CMDACT);
++	for (i = 0; i < 10000; i++) {
++		uint32_t v = dwc_rd(DEPCMD(ep));
++		if (!(v & DEPCMD_CMDACT)) {
++			uint32_t status = (v >> 12) & 0xf;
++			if (status) {
++				printf("SWEET USB: ep%u cmd 0x%x status %u\n", ep, cmd & 0xf, status);
++			} else {
++				rc = 0;
++			}
++			break;
++		}
++		delay(1);
++	}
++	if (i == 10000) {
++		printf("SWEET USB: ep%u cmd 0x%x timeout\n", ep, cmd & 0xf);
++	}
++	if (restore) {
++		dwc_wr(GUSB2PHYCFG0, phy);
++	}
++	lck_mtx_unlock(ud.cmd_lock);
++	return rc;
++}
++
++static int
+ ud_epcmd(unsigned ep, uint32_t cmd, uint32_t p0, uint32_t p1, uint32_t p2)
+ {
++	if (ud.dwc31) {
++		return ud_epcmd31(ep, cmd, p0, p1, p2);
++	}
+ 	dwc_wr(DEPCMDPAR0(ep), p0);
+ 	dwc_wr(DEPCMDPAR1(ep), p1);
+ 	dwc_wr(DEPCMDPAR2(ep), p2);
+@@ -730,7 +794,8 @@
+ 		}
+ 		return;
+ 	}
+-	if (type == 3 && status == 2) { /* XferNotReady, control status phase */
++	/* DWC_usb31: status bit 3 = transfer active, bits 1:0 = phase (usblog.c) */
++	if (type == 3 && (status == 2 || (ud.dwc31 && (status & 3) == 2))) { /* XferNotReady, control status phase */
+ 		if (ud.state == EP0_WAIT_STATUS2 || ud.state == EP0_WAIT_STATUS3) {
+ 			uint32_t ctl = ud.state == EP0_WAIT_STATUS3 ? TRBCTL_STATUS3 : TRBCTL_STATUS2;
+ 			ud.state = EP0_STATUS;
+@@ -808,8 +873,114 @@
+ 			if (sock_send(so, &msg, 0, &sent) != 0) {
+ 				break;          /* no route/ARP yet: retry later */
+ 			}
++		}
++	}
++}
++
++/*
++ * DWC_usb31 (stallion) take-over, replacing the plain CSFTRST of the
++ * Qualcomm path. Order and checks follow shim/usblog.c usblog_init(), which
++ * enumerated on the Mac from the same Linux-initialised state
++ * (logs/diagusb4.txt): Linux leaves the core running (DCTL 0x80f00000,
++ * DEVTEN 0xe57) with its event buffer at a SysMMU IOVA.
++ *  1. stop Linux's session (DEVTEN 0, RUN_STOP 0, wait DEVCTRLHLT), so the
++ *     core does no more DMA through the IOVA mapping;
++ *  2. HSI0 SysMMU CTRL_VM(0) bit 0 off = bypass: we DMA by physical address
++ *     (Linux: 0x25; without this: SysMMU READ PAGE FAULT);
++ *  3. port capability = device (GCTL);
++ *  4. DCTL.CSFTRST (348 us on the phone; never GCTL.CORESOFTRESET, which
++ *     would lose Linux's PHY interface setup), 50 ms settle, then put back
++ *     any of Linux's global settings the reset changed, and keep the host
++ *     disconnected >= 100 ms.
++ * The PHY, eUSB2 repeater, VBUS/session, clocks and power domain are
++ * Linux's and are not touched.
++ */
++#define GSBUSCFG0               0xc100
++#define GSBUSCFG1               0xc104
++#define GUCTL1                  0xc11c
++#define GSNPSID                 0xc120
++#define GUCTL                   0xc12c
++#define GUSB3PIPECTL0           0xc2c0
++#define GTXFIFOSIZ(n)           (0xc300 + 4 * (n))
++#define GRXFIFOSIZ0             0xc380
++#define GCTL_PRTCAP_MASK        (3u << 12)
++#define GCTL_PRTCAP_DEVICE      (2u << 12)
++#define DCTL_ULSTCHNG_MASK      (0xfu << 5)
++
++static uint64_t ud_sysmmu_pa;           /* ADT /sweet-usb sweet-sysmmu-ctrl, 0 = none */
++
++static int
++ud_dwc31_reset(void)
++{
++	static const uint32_t keep[] = {
++		GUSB2PHYCFG0, GUSB3PIPECTL0, GSBUSCFG0, GSBUSCFG1, GUCTL, GUCTL1,
++		GTXFIFOSIZ(0), GTXFIFOSIZ(1), GTXFIFOSIZ(2), GTXFIFOSIZ(3), GRXFIFOSIZ0,
++	};
++	uint32_t saved[sizeof(keep) / sizeof(keep[0])];
++	int i;
++
++	/* KMA_ZERO left dirty zero lines: write them back before the core DMAs. */
++	ud_sync(0, UD_SIZE);
++
++	uint32_t dctl = dwc_rd(DCTL);
++	printf("SWEET USB: Linux left DCFG 0x%08x DCTL 0x%08x DSTS 0x%08x DEVTEN 0x%08x GEVNTADR 0x%08x%08x\n",
++	    dwc_rd(DCFG), dctl, dwc_rd(DSTS), dwc_rd(DEVTEN), dwc_rd(GEVNTADRHI), dwc_rd(GEVNTADRLO));
++	if (dctl & DCTL_RUN_STOP) {
++		dwc_wr(DEVTEN, 0);
++		dwc_wr(DCTL, dctl & ~(DCTL_RUN_STOP | DCTL_ULSTCHNG_MASK));
++		for (i = 0; i < 500 && !(dwc_rd(DSTS) & DSTS_DEVCTRLHLT); i++) {
++			delay(1000);
++		}
++		printf("SWEET USB: run/stop cleared: %s after %d ms, DSTS 0x%08x\n",
++		    (dwc_rd(DSTS) & DSTS_DEVCTRLHLT) ? "halted" : "NOT halted", i, dwc_rd(DSTS));
++	}
++
++	if (ud_sysmmu_pa != 0) {
++		vm_offset_t mmu = ml_io_map((vm_offset_t)ud_sysmmu_pa, 4);
++		if (mmu == 0) {
++			printf("SWEET USB: SysMMU map failed\n");
++			return -1;
++		}
++		uint32_t vm0 = usb_rd(mmu, 0);
++		if (vm0 & 1) {
++			*(volatile uint32_t *)mmu = vm0 & ~1u;
++			__asm__ volatile ("dsb sy" ::: "memory");
+ 		}
++		printf("SWEET USB: SysMMU CTRL_VM0 @0x%llx 0x%08x -> 0x%08x (bypass)\n",
++		    ud_sysmmu_pa, vm0, usb_rd(mmu, 0));
+ 	}
++
++	uint32_t gctl = dwc_rd(GCTL);
++	if ((gctl & GCTL_PRTCAP_MASK) != GCTL_PRTCAP_DEVICE) {
++		dwc_wr(GCTL, (gctl & ~GCTL_PRTCAP_MASK) | GCTL_PRTCAP_DEVICE);
++		printf("SWEET USB: GCTL port capability was %u, set device: GCTL 0x%08x\n",
++		    (gctl >> 12) & 3, dwc_rd(GCTL));
++	}
++
++	for (unsigned k = 0; k < sizeof(keep) / sizeof(keep[0]); k++) {
++		saved[k] = dwc_rd(keep[k]);
++	}
++	dwc_wr(DCTL, DCTL_CSFTRST);
++	for (i = 0; i < 1000 && (dwc_rd(DCTL) & DCTL_CSFTRST); i++) {
++		delay(1000);
++	}
++	printf("SWEET USB: soft reset %s after %d ms, GCTL 0x%08x DCFG 0x%08x GUSB2PHYCFG0 0x%08x\n",
++	    (dwc_rd(DCTL) & DCTL_CSFTRST) ? "STUCK" : "done", i, dwc_rd(GCTL), dwc_rd(DCFG),
++	    dwc_rd(GUSB2PHYCFG0));
++	if (dwc_rd(DCTL) & DCTL_CSFTRST) {
++		return -1;
++	}
++	delay(50000);           /* DWC_usb31 <= 1.80a: 50 ms before touching the PHY side */
++	for (unsigned k = 0; k < sizeof(keep) / sizeof(keep[0]); k++) {
++		uint32_t now_v = dwc_rd(keep[k]);
++		if (now_v != saved[k]) {
++			printf("SWEET USB: reg 0x%x changed by reset 0x%08x -> 0x%08x: restored\n",
++			    keep[k], saved[k], now_v);
++			dwc_wr(keep[k], saved[k]);
++		}
++	}
++	delay(100000);          /* >= 100 ms disconnect seen by the host */
++	return 0;
+ }
+ 
+ static void
+@@ -830,6 +1001,12 @@
+ 	ud.dma_pa = ptoa_64(pn);
+ 	ud_if_create();
+ 
++	if (ud.dwc31) {
++		if (ud_dwc31_reset() != 0) {
++			return;
++		}
++		goto reset_done;
++	}
+ 	/* Device controller soft reset (PHY and global setup stay as ABL left them). */
+ 	dwc_wr(DCTL, DCTL_CSFTRST);
+ 	int i;
+@@ -841,6 +1018,7 @@
+ 	if (dwc_rd(DCTL) & DCTL_CSFTRST) {
+ 		return;
+ 	}
++reset_done:
+ 
+ 	dwc_wr(GEVNTADRLO, (uint32_t)(ud.dma_pa + UD_EVT));
+ 	dwc_wr(GEVNTADRHI, (uint32_t)((ud.dma_pa + UD_EVT) >> 32));
+@@ -866,7 +1044,8 @@
+ 	dwc_wr(DALEPENA, 0x3);
+ 	ud_start_setup();
+ 
+-	vm_offset_t qs = ml_io_map(QSCRATCH_PA, 0x100);
++	/* QSCRATCH is Qualcomm only; on DWC_usb31 boards Linux left VBUS/session valid. */
++	vm_offset_t qs = ud.dwc31 ? 0 : ml_io_map(QSCRATCH_PA, 0x100);
+ 	if (qs != 0) {
+ 		uint32_t hs = usb_rd(qs, QSCRATCH_HS_PHY_CTRL), ss = usb_rd(qs, QSCRATCH_SS_PHY_CTRL);
+ 		printf("SWEET USB: QSCRATCH HS_PHY_CTRL 0x%08x SS_PHY_CTRL 0x%08x GENERAL_CFG 0x%08x\n",
+@@ -892,4 +1071,89 @@
+ 		thread_deallocate(thread);
+ 	}
+ }
++
++/*
++ * Boards whose USB controller the loader describes in the ADT (stallion,
++ * Pixel 10a: tools/mkadt.py --target stallion):
++ *   /sweet-usb  reg                = <u64 phys, u64 size>  DWC3/DWC_usb31 core
++ *               sweet-sysmmu-ctrl  = <u64 phys>  optional, SysMMU CTRL_VM(0)
++ *                                    of the controller's DMA path; bit 0 is
++ *                                    cleared (bypass) before the core DMAs
++ * Sweet's ADT has no /sweet-usb node: sweet keeps the Qualcomm path above
++ * (GCC/QUSB2 probe, QSCRATCH VBUS override) unchanged.
++ * Same boot-arg as sweet, but the gadget is the default here (there is no
++ * other console channel): sweetusb=0 off, 1 register dump only, 2 (default)
++ * CDC-ECM ue0 192.168.7.2 + live log to 192.168.7.1:5140 (sweetusblog=0
++ * disables the log stream). The PHY, eUSB2 repeater, VBUS/session, clocks
++ * and power domain must already be up (XNU started from Linux).
++ * Runs once, from whichever caller comes first: sweet_usb_probe() (UFS root
++ * attached) or sweet_usb_board_start() (IOFindBSDRoot, before the root
++ * device is looked up, so it also runs on a board without UFS root).
++ */
++static bool
++sweet_usb_dt_probe(void)
++{
++	static bool done;
++	DTEntry node;
++	uintptr_t const *reg = NULL;
++	uint64_t const *mmu = NULL;
++	unsigned int size = 0, mmu_size = 0;
++
++	if (SecureDTLookupEntry(NULL, "/sweet-usb", &node) != kSuccess) {
++		return false;
++	}
++	if (done) {
++		return true;
++	}
++	done = true;
++	if (SecureDTGetProperty(node, "reg", (void const **)&reg, &size) != kSuccess ||
++	    size < 2 * sizeof(uintptr_t)) {
++		printf("SWEET USB: /sweet-usb has no reg\n");
++		return true;
++	}
++	if (SecureDTGetProperty(node, "sweet-sysmmu-ctrl", (void const **)&mmu, &mmu_size) == kSuccess &&
++	    mmu_size >= sizeof(uint64_t)) {
++		ud_sysmmu_pa = mmu[0];
++	}
++	int enabled = 2;
++	PE_parse_boot_argn("sweetusb", &enabled, sizeof(enabled));
++	if (!enabled) {
++		return true;
++	}
++	vm_offset_t dwc = ml_io_map(reg[0], reg[1]);
++	if (dwc == 0) {
++		printf("SWEET USB: DWC3 map failed\n");
++		return true;
++	}
++	uint32_t id = usb_rd(dwc, GSNPSID);
++	printf("SWEET USB: /sweet-usb DWC3 @0x%lx GSNPSID 0x%08x GCTL 0x%08x GSTS 0x%08x GUSB2PHYCFG 0x%08x GUSB3PIPECTL 0x%08x\n",
++	    (unsigned long)reg[0], id, usb_rd(dwc, GCTL), usb_rd(dwc, 0xc118), usb_rd(dwc, GUSB2PHYCFG0),
++	    usb_rd(dwc, GUSB3PIPECTL0));
++	printf("SWEET USB: DWC3 DCFG 0x%08x DCTL 0x%08x DEVTEN 0x%08x DSTS 0x%08x DALEPENA 0x%08x\n",
++	    usb_rd(dwc, DCFG), usb_rd(dwc, DCTL), usb_rd(dwc, DEVTEN), usb_rd(dwc, DSTS),
++	    usb_rd(dwc, DALEPENA));
++	printf("SWEET USB: DWC3 GEVNTADR 0x%08x%08x GEVNTSIZ 0x%08x GEVNTCOUNT 0x%08x GHWPARAMS0 0x%08x\n",
++	    usb_rd(dwc, GEVNTADRHI), usb_rd(dwc, GEVNTADRLO), usb_rd(dwc, GEVNTSIZ),
++	    usb_rd(dwc, GEVNTCOUNT), usb_rd(dwc, 0xc140));
++	uint32_t hi = id >> 16;
++	if (hi != 0x5533 && hi != 0x3331 && hi != 0x3332) {
++		printf("SWEET USB: not a DWC3 (GSNPSID 0x%08x)\n", id);
++		return true;
++	}
++	if (enabled >= 2) {
++		static lck_grp_t *grp;
++		grp = lck_grp_alloc_init("sweet_usb_cmd", LCK_GRP_ATTR_NULL);
++		ud.cmd_lock = lck_mtx_alloc_init(grp, LCK_ATTR_NULL);
++		ud.dwc31 = true;
++		sweet_usb_gadget_start(dwc);
++	}
++	return true;
++}
++
++/* IOFindBSDRoot (iokit/bsddev/IOKitBSDInit.cpp): no-op without /sweet-usb. */
++void
++sweet_usb_board_start(void)
++{
++	(void)sweet_usb_dt_probe();
++}
+ #endif /* ARM64_BOARD_CONFIG_SWEET */
+--- a/iokit/bsddev/IOKitBSDInit.cpp
++++ b/iokit/bsddev/IOKitBSDInit.cpp
+@@ -770,6 +770,12 @@
+ //
+ //	SWEET: root on a GPT partition of the internal UFS (bsd/dev/sweet_ufs.c)
+ //
++	{
++		// USB Ethernet + live log on boards with ADT /sweet-usb (stallion),
++		// before (and independent of) the root device. Once; no-op on sweet.
++		extern void sweet_usb_board_start(void);
++		sweet_usb_board_start();
++	}
+ 	if (strcmp(rdBootVar, "ufsroot0") == 0) {
+ 		extern int sweet_ufs_rootdev(dev_t *dev);
+ 		OSSafeReleaseNULL(matching);
