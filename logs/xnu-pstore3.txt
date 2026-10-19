@@ -1,0 +1,698 @@
+SHIMstallion milestone A: recon
+PAYLOADlen=00FD7B70at>>4=9B000000
+PAYSUM2AFFF84B09681AEA
+SENTINELcpu_on=00000000s=00000078
+DTBat=8A000000magic=D00DFEED
+FBfdt=00000000w/h=00000000
+FBSTR0000000000000000
+
+usblog: HSI0 SysMMU VM0 was 00000025: bypassed
+usblog: init: about to read GSNPSID @1121c120 (a hang here = HSI0 off/unclocked)
+usblog: GSNPSID=33313130 GCTL=30c12004 GSTS=7e800000
+usblog: DWC_usb31 VER_NUMBER=3139302a
+usblog: HWPARAMS0=4020804a 1=01032485 3=10420086 GSBUSCFG0=2222000f
+usblog: GUSB2PHYCFG0=00102540 GUSB3PIPECTL0=01021002 GUCTL=0d0368c8
+usblog: ABL: DCFG=00a0080c DCTL=80f00000 DSTS=0002fdb0 DEVTEN=00000e57 DALEPENA=0000000f
+usblog: ABL: GEVNTADR=0000000ffffff000 SIZ=00001000 COUNT=00000000
+usblog: run/stop cleared: halted after 2 us, DSTS=00d39aa4
+usblog: soft reset done in 348 us
+usblog: running after 3 us: DSTS=00120009 DCFG=00a00800, evt @bd036000, ring 824 bytes queued
+USBLOGrc=00000000wait_s=0000000A
+usblog: event 00000101
+usblog: bus reset
+usblog: event 00000201
+usblog: connect done, speed 0 (high)
+usblog: event 0000c040
+usblog: setup 00010500 len 0
+usblog: address 1
+usblog: event 000020c2
+usblog: event 0000c042
+usblog: event 0000c040
+usblog: setup 01000680 len 18
+usblog: event 000010c2
+usblog: event 000090c2
+usblog: event 0000c042
+usblog: event 000020c0
+usblog: event 0000c040
+usblog: event 0000c040
+usblog: setup 03020680 len 2
+usblog: event 000010c2
+usblog: event 000090c2
+usblog: event 0000c042
+usblog: event 000020c0
+usblog: event 0000c040
+usblog: event 0000c040
+usblog: setup 03020680 len 36
+usblog: event 000010c2
+usblog: event 000090c2
+usblog: event 0000c042
+usblog: event 000020c0
+usblog: event 0000c040
+usblog: event 0000c040
+usblog: setup 03010680 len 2
+usblog: event 000010c2
+usblog: event 000090c2
+usblog: event 0000c042
+usblog: event 000020c0
+usblog: event 0000c040
+usblog: event 0000c040
+usblog: setup 03010680 len 20
+usblog: event 000010c2
+usblog: event 000090c2
+usblog: event 0000c042
+usblog: event 000020c0
+usblog: event 0000c040
+usblog: event 0000c040
+usblog: setup 03030680 len 2
+usblog: event 000010c2
+usblog: event 000090c2
+usblog: event 0000c042
+usblog: event 000020c0
+usblog: event 0000c040
+usblog: event 0000c040
+usblog: setup 03030680 len 18
+usblog: event 000010c2
+usblog: event 000090c2
+usblog: event 0000c042
+usblog: event 000020c0
+usblog: event 0000c040
+usblog: event 0000c040
+usblog: setup 02000680 len 9
+usblog: setup 02000680 len 75
+usblog: setup 00010900 len 0
+usblog: configured (high speed), DALEPENA=0000002f
+USBLOGhost configured us
+
+FDTdumped to prz
+
+PHYSbase=C0000000size=F0000000
+VIRTFFFFFE0006000000
+ENTRYFFFFFE000748C488
+usblog: setup 03000680 len 4
+SEGSn=0000000Aend=C24C8000
+usblog: setup 00032221 len 0
+usblog: DTR 1 (host opened the port)
+PLACEDby sweetjump (Linux)
+usblog: setup 00002021 len 7
+BOOTARGpa=C24CC000top=C24D0000
+JUMP00000008C148C488
+usblog: setup 00002021 len 7
+XNUjumping (fbcon clears screen)
+usblog: setup 00002021 len 7
+XNUFBpa=00000000w/h=00000000
+SENTINEL0000000000000096
+usblog: setup 00002021 len 7
+usblog: stopping (tx 3111 bytes, 0 dropped)
+usblog: setup 00002021 len 7
+usblog: stopped, DSTS=00104d11
+
+--- SWEET XNU RAM log ---
+SWEET EARLY 1: arm_init entered (MMU on)
+SWEET EARLY 2: PE_init_platform done
+SWEET EARLY 3: ml_parse_cpu_topology done
+SWEET EARLY 4: cpu_bootstrap done
+SWEET EARLY 5: kernel_startup_bootstrap done
+SWEET EARLY 6: cpu_init done
+SWEET EARLY 7: entering arm_vm_init
+SWEET EARLY 8: leaving bootstrap TTBR0
+SWEET EARLY 9: kernel framebuffer VA live
+SWEET EARLY 10: TTBR0 off; TLB flushed
+SWEET EARLY 11: physmap table pointers rebound
+SWEET EARLY 12: calling pmap_bootstrap
+SWEET EARLY 13: pmap_bootstrap done
+SWEET EARLY 14: early I/O page tables ready
+SWEET EARLY 15: arm_vm_init returned
+SWEET EARLY 16: calling serial_init
+SWEET EARLY 19: serial_init returned
+SWEET EARLY 20: kprintf startup complete
+Darwin Kernel Version 22.6.0: Mon Aug 14 05:06:07 UTC 2023; runner:xnu-8796.141.3
+pmap_startup() init/release time: 12205 microsec
+pmap_startup() delayed init/release of 0 pages
+vm_page_bootstrap: 242435 free pages, 3325 wired pages, (up to 0 of which are delayed free)
+VM boostrap: 97 maps, 204 entries and 512 holes available
+Maximum number of VM swap files: 100
+zones                   : 0xfffffe1000494000 - 0xfffffe3000494000 (128G)
+compressor              : 0xfffffe3000494000 - 0xfffffe3f00aa4000 (60G)
+bsd_pageable            : 0xfffffe3f00aa4000 - 0xfffffe3f04dac000 (67M)
+gIOKitPageableFixed0    : 0xfffffe3f04dac000 - 0xfffffe3f0adac000 (96M)
+kmem_sprayqtn_range     : 0xfffffe3f0adac000 - 0xfffffe3f81b34000 (1901M)
+ipc_kernel_map          : 0xfffffe3f81b34000 - 0xfffffe3f85b34000 (64M)
+kmem_data_range         : 0xfffffe3f85b34000 - 0xfffffe7babb7c000 (240G)
+gIOKitPageableFixed1    : 0xfffffe7babb7c000 - 0xfffffe7bb1b7c000 (96M)
+zone_meta               : 0xfffffe7bb1b7c000 - 0xfffffe7bba6c4000 (139M)
+mb                      : 0xfffffe7bba6c4000 - 0xfffffe7bbe6c4000 (64M)
+bufferhdr               : 0xfffffe7bbe6c4000 - 0xfffffe7bbe968000 (2704K)
+gIOKitPageableFixed2    : 0xfffffe7bbe968000 - 0xfffffe7bc4968000 (96M)
+gIOKitPageableFixed3    : 0xfffffe7bc4968000 - 0xfffffe7bca968000 (96M)
+kmem_ptr_range_meta     : 0xfffffe7bca968000 - 0xfffffe7bcb0fc000 (7M)
+kmem_ptr_range          : 0xfffffe7bcb0fc000 - 0xfffffe8ffedfc000 (80G)
+io_submap               : 0xfffffe8ffedfc000 - 0xfffffe8fff5fc000 (8M)
+ipc_kernel_copy_map     : 0xfffffe8fff5fc000 - 0xfffffe8fffdfc000 (8M)
+kmem_large_ranges[1]    : 0 - 0 (0B)
+kmem_large_ranges[2]    : 0 - 0 (0B)
+kmem_large_ranges[3]    : 0 - 0 (0B)
+kmem_large_ranges[4]    : 0xfffffe3f19b5d000 - 0xfffffe3f81b34000 (1663M)
+kmem_large_ranges[5]    : 0xfffffe470a73d000 - 0xfffffe7babb7c000 (210G)
+"vm_compressor_mode" is 4
+zone_init: pgzalloc  0xfffffe1000494000:0xfffffe1002248000 (29M) [950 slots]
+zone_init: map VM    0xfffffe1002248000:0xfffffe14ceaa0000 (19G)
+zone_init: map RO    0xfffffe14ceaa0000:0xfffffe16682bc000 (6G)
+zone_init: map GEN0  0xfffffe16682bc000:0xfffffe1b34b14000 (19G)
+zone_init: map GEN1  0xfffffe1b34b14000:0xfffffe200136c000 (19G)
+zone_init: map GEN2  0xfffffe200136c000:0xfffffe24cdbc4000 (19G)
+zone_init: map GEN3  0xfffffe24cdbc4000:0xfffffe299a41c000 (19G)
+zone_init: map DATA  0xfffffe299a41c000:0xfffffe3000494000 (25G)
+zone_init: metadata  0xfffffe7bb1b8c000:0xfffffe7bb9b8c000 (128M)
+zone_init: metabits  0xfffffe7bb9b8c000:0xfffffe7bba6b4000 (11M)
+zone_init: extra     0:0 (0B)
+VM bootstrap done: 85 maps, 165 entries and 501 holes left
+Long logs support configured: size: 16384
+Log queues configured: slot count: 8, per-slot size: 32768, total size: 262144
+Firehose configured: 16 chunks, 8 io pages
+OSLog stream configured: stream: 8192 bytes, cache: 2112 bytes
+OSLog stream verification: 0
+standard timeslicing quantum is 10000 us
+standard background quantum is 2500 us
+mig_table_max_displ = 54 mach_kobj_count = 374
+debug_log_init: Error!! gPanicBase is still not initialized
+debug_log_init: Error!! gPanicBase is still not initialized
+kdp_core zlib memory 0x8000
+Serial requested, consistent debug disabled or debug boot arg not present, configuring debugging over serial
+iBoot version: sweet-shim
+"name" not a kext
+"AAPL,phandle" not a kext
+SWEET AMFI: built-in interface registered (XML entitlements)
+calling mpo_policy_init for vnguard
+Security policy loaded: Guarded vnode policy (vnguard)
+SWEET: trust caches unavailable (Image4/AMFI not installed)
+No POST boot-arg set.
+SWEET: starting device-tree platform expert
+SWEET: platform expert registered
+SWEET AKS: AppleKeyStore registered (no passcode, unlocked)
+SWEET WDT: IOWatchdog registered (accepts check-ins, never fires)
+SWEET SURF: IOCoreSurfaceRoot registered
+SWEET HID: buttons registered (test every 0 s)
+SWEET HID: touch registered
+SWEET BATTERY: static fallback, 100% 4200mV external=1 charging=0
+SWEET CPU: requested=1 selected=1 (limit=8)
+SWEET CPU: cpu=0 mpidr=0x0 came alive; SGI1 OK
+Copyright (c) 1982, 1986, 1989, 1991, 1993
+	The Regents of the University of California. All rights reserved.
+
+MAC Framework successfully initialized
+using 4867 buffer headers and 4481 cluster IO buffer headers
+SWEET CPU: 1/1 CPUs initialized, SGI1 verified
+ktriage_register_subsystem_strings: set subsystem 8 strings
+calling mpo_policy_init for SWEET AMFI
+Security policy loaded: SWEET built-in Mobile File Integrity (SWEET AMFI)
+SWEET AMFI: platform binary policy registered (0)
+calling mpo_policy_init for Sandbox
+Security policy loaded: SWEET permissive sandbox stand-in (Sandbox)
+SWEET Sandbox: permissive policy registered (0)
+SWEET HFS: hfs-627.100.6 registered
+mcache: 1 CPU(s), 64 bytes CPU cache line size
+mbinit: done [64 MB total pool size, (42/21) split]
+dlil_init: Waiting for all the create dlil kernel threads to get scheduled at least once.
+dlil_init: All the created dlil kernel threads have been scheduled at least once. Proceeding.
+ifnet_attach: All kernel threads created for interface lo0 have been scheduled at least once. Proceeding.
+ifnet_attach: Waiting for all kernel threads created for interface gif0 to get scheduled at least once.
+ifnet_attach: All kernel threads created for interface gif0 have been scheduled at least once. Proceeding.
+skip attaching fsw to lo0 using legacy TX modelifnet_attach: Waiting for all kernel threads created for interface stf0 to get scheduled at least once.
+ifnet_attach: All kernel threads created for interface stf0 have been scheduled at least once. Proceeding.
+SWEET USB: /sweet-usb DWC3 @0x11210000 GSNPSID 0x33313130 GCTL 0x30c12004 GSTS 0x7e800000 GUSB2PHYCFG 0x00102540 GUSB3PIPECTL 0x01021002
+SWEET USB: DWC3 DCFG 0x00a00808 DCTL 0x00000000 DEVTEN 0x00000000 DSTS 0x00104d11 DALEPENA 0x00000003
+SWEET USB: DWC3 GEVNTADR 0x00000009bd036000 GEVNTSIZ 0x80001000 GEVNTCOUNT 0x80000000 GHWPARAMS0 0x4020804a
+ifnet_attach: Waiting for all kernel threads created for interface ue0 to get scheduled at least once.
+ifnet_attach: All kernel threads created for interface ue0 have been scheduled at least once. Proceeding.
+skip attaching fsw to ue0 using legacy TX modelSWEET NET: kernel_task ue0 add address 192.168.7.2
+SWEET USB: ue0 192.168.7.2/24 up (err 0)
+SWEET USB: Linux left DCFG 0x00a00808 DCTL 0x00000000 DSTS 0x00104d11 DEVTEN 0x00000000 GEVNTADR 0x00000009bd036000
+SWEET USB: SysMMU CTRL_VM0 @0x11048000 0x00000024 -> 0x00000024 (bypass)
+SWEET USB: soft reset done after 1 ms, GCTL 0x30c12004 DCFG 0x00a00808 GUSB2PHYCFG0 0x00102540
+SWEET USB: reg 0xc308 changed by reset 0x02768253 -> 0x02760253: restored
+SWEET USB: running (DSTS 0x00120009 after 0 ms), DMA at 0x8c33f4000
+Waiting on <dict ID="0"><key>IOProviderClass</key><string ID="1">IOMedia</string><key>Content</key><string ID="2">Apple_HFS</string></dict>
+SWEET USB: event 0x00000101
+SWEET USB: bus reset
+SWEET USB: event 0x00000201
+SWEET USB: connected, speed 0
+SWEET USB: event 0x0000c040
+SWEET USB: setup 00 05 0001 0000 len 0
+SWEET USB: address 1
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0100 0000 len 18
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0302 0409 len 2
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0302 0409 len 50
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0301 0409 len 2
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0301 0409 len 20
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0303 0409 len 2
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0303 0409 len 10
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0200 0000 len 9
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0200 0000 len 80
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 00 09 0001 0000 len 0
+SWEET USB: ECM endpoints configured
+SWEET USB: configured (1)
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000c040
+SWEET USB: setup 01 0b 0000 0001 len 0
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000c040
+SWEET USB: setup 01 0b 0001 0001 len 0
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000c040
+SWEET USB: setup 21 43 0000 0000 len 0
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0304 0409 len 2
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0304 0409 len 26
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x000090c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 80 06 0300 0000 len 4
+SWEET USB: event 0x000010c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x000020c0
+SWEET USB: event 0x0000c040
+SWEET USB: event 0x0000c040
+SWEET USB: setup 21 43 000c 0000 len 0
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000c040
+SWEET USB: setup 21 43 000c 0000 len 0
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000c040
+SWEET USB: setup 21 43 000e 0000 len 0
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000c04a
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000c040
+SWEET USB: setup 21 43 000e 0000 len 0
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000c040
+SWEET USB: setup 21 43 000e 0000 len 0
+SWEET USB: event 0x000020c2
+SWEET USB: event 0x0000c042
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: ue0 rx 61 tx 0 frames
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+Failed to write boot-picker-bringup-reason to NVRAM.
+SWEET USB: event 0x0000e044
+SWEET USB: ue0 rx 67 tx 0 frames
+SWEET USB: ue0 rx 67 tx 0 frames
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: ue0 rx 71 tx 0 frames
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: ue0 rx 77 tx 0 frames
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: ue0 rx 79 tx 0 frames
+SWEET USB: ue0 rx 79 tx 0 frames
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: ue0 rx 84 tx 0 frames
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: event 0x0000e044
+SWEET USB: ue0 rx 88 tx 0 frames
+SWEET USB: event 0x0000e044
+[   0.000000] [I] [GS] secure payload loading took 0ms
+[   0.000000] [I] [GS] platform info binded: true
+[   0.000000] [I] [GS] platform info: 061306010000
+[   0.859043] [I] [MAIN] 
+welcome to lk/MP
+
+[   0.859079] [I] [MAIN] boot args 0x1 0x0 0x0 0x0
+trusty_dev_common.c: INFO selected trusty api version: 3 (requested 3)
+[   0.859799] [I] [GS] WXN has been enabled.
+[   0.859843] [I] [GS] acpm locks regulators
+[   0.859900] [I] [GS] Soc Product ID: 0x09875
+[   0.859938] [I] [GS] Soc rev: A1
+[   0.859970] [I] [GS] Soc ID: 0x12762f53c708
+[   0.860007] [I] [GS] DVFS version: 2
+[   0.860079] [I] [PMIC] S2MPG_M CHIPID read: 0x10
+[   0.860147] [I] [PMIC] S2MPG_S CHIPID read: 0x10
+[   0.860212] [I] [PMIC] S2MPG_M PWRONSRC read: 0x80
+[   0.860290] [I] [PMIC] S2MPG_M OFFSRC1 read: 0x0
+[   0.860362] [I] [PMIC] S2MPG_M OFFSRC2 read: 0x0
+[   0.860430] [I] [PMIC] S2MPG_M RTC_WTSR read: 0xe
+[   0.860478] [I] [PMIC] S2MPG_M INT1: 0x30
+[   0.860514] [I] [PMIC] S2MPG_M INT2: 0x0
+[   0.860545] [I] [PMIC] S2MPG_M INT3: 0x0
+[   0.860575] [I] [PMIC] S2MPG_M INT4: 0x0
+[   0.860610] [I] [PMIC] S2MPG_M INT5: 0x0
+[   0.860673] [I] [PMIC] S2MPG_S OFFSRC1 read: 0x0
+[   0.860717] [I] [PMIC] S2MPG_S INT1: 0x80
+[   0.860749] [I] [PMIC] S2MPG_S INT2: 0x80
+[   0.860784] [I] [PMIC] S2MPG_S INT3: 0x0
+[   0.860815] [I] [PMIC] S2MPG_S INT4: 0x0
+[   0.860854] [I] [PMIC] S2MPG_S INT5: 0x0
+APC Bootmetrics:
+  BL1: MT:1 / DT:ENTRY / 103928 us
+  BL1: MT:2 / DT:LOAD  / 7296 us
+  BL1: MT:F / DT:EXIT  / 215176 us
+  PBL: MT:1 / DT:ENTRY / 215312 us
+  PBL: MT:2 / DT:LOAD  / 19392 us
+  PBL: MT:F / DT:EXIT  / 280248 us
+  BL2: MT:1 / DT:ENTRY / 281816 us
+  BL2: MT:2 / DT:LOAD  / 160 us
+  BL2: MT:3 / DT:LOAD  / 152 us
+  BL2: MT:4 / DT:CHECK / 409816 us
+  BL2: MT:5 / DT:CHECK / 2096 us
+  BL2: MT:6 / DT:LOAD  / 61720 us
+  BL2: MT:7 / DT:CHECK / 156904 us
+  BL2: MT:8 / DT:CHECK / 157048 us
+  BL2: MT:9 / DT:LOAD  / 44216 us
+  BL2: MT:A / DT:LOAD  / 30992 us
+  BL2: MT:B / DT:LOAD  / 380224 us
+  BL2: MT:C / DT:LOAD  / 8 us
+  BL2: MT:F / DT:EXIT  / 662016 us
+  PBL: MT:3 / DT:LOAD  / 86176 us
+  PBL: MT:4 / DT:LOAD  / 27848 us
+  PBL: MT:5 / DT:LOAD  / 5928 us
+  PBL: MT:6 / DT:CHECK / 782152 us
+  PBL: MT:7 / DT:CHECK / 782288 us
+  EL3: MT:1 / DT:ENTRY / 785064 us
+  EL3: MT:D / DT:CHECK / 800632 us
+  EL3: MT:E / DT:CHECK / 848080 us
+  EL3: MT:F / DT:EXIT  / 848120 us
+APC Breadcrumbs(v2.4):
+ stages(S): 00000000 / 0000404F
+  flags(S): 00000000 / 000022C0
+stages(NS): 00000000 / 00005004
+ flags(NS): 00000000 / 0000D400
+    status: 00000000 / 00000000
+    device: 00000000 / 00000001
+   tmutrip: 00000000 / 00000000
+     reset: 00000000 / 00180000
+[   0.861836] [E] [TMU]  PSHOLD low Detected.
+[   0.861884] [E] [DBGC] GSA Breadcrumb:
+00000000 0000000d 00000000 00000000  |................|
+00000000 00000000 00000001           |............    |
+[   0.862028] [I] [DPM] SBDP initialized: chipid allowed=0, dpm_state=0x0000
+[   0.862087] [E] [DPM] check header failed
+[   0.862224] [I] [dev] initializing device i2c:usi00
+[   0.862269] [I] [I2C] usi00: version 2.2
+[   0.862324] [I] [dev] initializing device i2c:usi04
+[   0.862370] [I] [I2C] usi04: version 2.2
+[   0.862418] [I] [dev] initializing device i2c:usi06
+[   0.862463] [I] [I2C] usi06: version 2.2
+[   0.862511] [I] [dev] initializing device i2c:usi09
+[   0.862552] [I] [I2C] usi09: version 2.2
+[   0.862605] [I] [dev] initializing device i2cm:i2cm0
+[   0.862647] [I] DVFS init
+[   0.864873] [I] DVFS init done
+[   0.864910] [I] [UFS] UFS EVT version 0
+[   0.864955] [I] [UFS] controller version 3.0 found
+[   0.865001] [I] [UFS] capabilities 0x1383ff1f
+[   0.865208] [I] [UFS] UFS device found
+zuma_ufs_device_init_done
+[   0.865254] [E] [UFS] ufshc_notify done
+[   0.865328] [I] [UFS] ufshc_power_mode_change HS gear 4
+[   0.875527] [I] [UFS] ufshc: bBootLunEn 0x1
+[   0.875652] [I] [UFS] UFS device SKhynix HN8T05DEHKX073 version 3.1
+[   0.875701] [I] [UFS] Enabled LUNs found 4
+[   0.875758] [I] [UFS] UFS device total size 127984992256
+[   0.875845] [I] [UFS] Temp too high enabled
+[   0.875925] [I] [UFS] Temp too low enabled
+[   0.876382] [I] [UFS] Write Booster: available buffer=0x6 lifetime=0x1 current buffer=0x1e00
+[   0.876472] [I] [RIPCURRENTPRO] boot slot: a
+[   0.878157] [I] [A/B] slot data a: 0x00001e02
+[   0.878192] [I] [A/B] slot data b: 0x00001800
+[   0.878791] [I] [RIPCURRENTPRO] platform info: 061306010000
+[   0.878986] [I] [dev] initializing device cs40l2x:cs40l26
+[   0.889474] [I] [CS40L2x] CS40L26 found
+[   0.891143] [I] [dev] initializing device nfc:st21nfc
+[   0.893075] [I] [MAX77759] tcpc vendor id 56
+[   0.893994] [BMS] found 77779 on usi6
+[   0.894023] [BMS] bms_init init usi10 as sec_i2c
+[   0.894060] [I] [dev] initializing device i2c:usi10
+[   0.894101] [I] [I2C] usi10: version 2.2
+[   0.894295] [I] [MAX77779fg] FG device name 0x5100
+[   0.894813] [I] [BMS] [max77779fg] SOC(100), VCELL(4426), INOW(-490), IAVG(709)
+[   0.895403] [I] [BMS] fship 0x0
+[   0.895536] [I] [BMS] master disconnect reason 0x0
+trusty_dev_common.c: INFO selected trusty api version: 3 (requested 3)
+[   0.898427] [I] [FUSE] LCS state:PRODUCTION
+[   0.898607] [I] [FFU] no valid file
+[TMU:0] 72
+[TMU:1] 71
+[   0.904217] [I] [DSIM] dsim_probe dsim0+
+[   0.904258] [I] [DSIM] using data lane count(4)
+[   0.920462] [E] [DSIM] dsim0 wait phy pll stable
+[   0.937624] [I] [DPU] Succeeded to read panel product id : 0x3580a040
+[   0.937677] [E] [DPU] is_compatible is not defined!
+[   0.937724] [I] [DPU] panel_rev: 0x1000
+[   0.937864] [I] [DSIM] use panel google-staea for dsim0
+[   0.937908] [I] [DSIM] dsim_probe -: dsim0 driver(cmd mode) has been probed.
+[   0.937971] [I] [DSIM] dsim_probe dsim1+
+[   0.938007] [I] [DSIM] using data lane count(4)
+[   0.938080] [E] [DSIM] dsim1 wait phy pll stable
+[   0.985604] [E] [RIPCURRENTPRO] 
+Reboot Info:
+  RST_STAT: 0x180000 - PIN_RESET | PO_RESET
+  GSA_RESET_STATUS: 0x1 - GSA_PINRESET
+  Reboot reason: 0xcaca - Emergency Reset
+  Reboot mode: 0x0 - Normal Boot
+[   1.005535] [E] [EUSB] failed to get eUSB revision -62
+[   1.005580] [I] [FB] Set EUSB Ref clock auto
+[   1.008697] [E] [DSIM] timeout!! wait for DSIM interrupt (0x300004)
+[   1.008793] [E] [DSIM] MIPI DSIM (id=6) read Timeout! 0x4
+[   1.008832] [E] [DSIM] dsim fail to get panel operation
+[   1.008916] [E] [DSIM] dsim has error.
+[   1.008950] [E] [DSIM] dsim_probe -: dsim1 probe failed.
+[   1.008993] [I] [DSIM] dsim1 probe was failed
+[   1.009027] [I] [DSIM] dsim_init -: set dsim0 driver as primary.
+[   1.009380] [I] LK build date: Nov  5 2025, time: 11:35:11
+[   1.009424] [I] BL version: stallion-16.4-14387552
+[   1.009460] [I] BL type: official build
+starting app pixel_loader
+[   1.018732] [I] [PXL] sota: empty signature.
+[   1.018768] [I] [PXL] AB Decision: active slot boot ok
+[   1.018807] [I] [PXL] AB Decisions: 00000000
+[   1.019033] [I] [MAX77759] TCPC BC1.2, type: 1 val:1
+[   1.019233] [I] [PXL] boot voltage threshold=3400mV
+[   1.019337] [I] [PXL] bootloader message:
+[   1.019656] [I] [MAX77759] TCPC BC1.2, type: 1 val:1
+[   1.019853] [I] [PXL] boot voltage threshold=3400mV
+[   1.025240] [E] [DSIM] dsim0 wait phy pll stable
+[   1.040571] [I] [DPP] dpp_probe +
+[   1.040598] [I] [DPP] dpp-0's attr is (0x004d0047)
+[   1.040635] [I] [DPP] dpp(0) init resources.
+[   1.040693] [I] [DPP] dpp_probe -: dpp0 is probed successfully
+[   1.040740] [I] [DECON] decon-int: max win6, command mode, hw trigger
+[   1.040789] [I] [DECON] single dsi mode
+[   1.040826] [I] [decon0] d_path(0xB1) DSCC DSC_ENC1 DSC_ENC0 OFIFO.0
+[   1.040937] [I] [decon0] sel(0x0) OFIFO.0 - dsim0 - google-staea
+[   1.040982] [I] [DECON] Display 1st window(5) xres(1080) yres(2424) win_start_pos(0) win_end_pos(9770437)
+avb_slot_verify.c:443: ERROR: init_boot_a: Hash of data does not match digest in descriptor.
+[   1.093569] [I] [TCPM] port connected
+[   1.153566] [I] [AVB] boot_state: 160000:20251205:20251205
+trusty_dev_common.c: INFO selected trusty api version: 3 (requested 3)
+[   1.155062] [I] [AND] using init_boot ramdisk
+[   1.155105] [I] [AND] using vendor_kernel_boot ramdisk
+[   1.155227] [I] [AND] kernel: addr:0xffff0000a0011000, size:fcc6a1
+[   1.191794] [I] [AND] kernel: total_time:37
+[   1.207816] [I] [DECON] decon0 registered successfully
+[   1.207886] [I] [AND] vendor kernel ramdisk copy
+[   1.207921] [I] [AND] ramdisk dst addr: 0xffff000086000000 src addr: 0xffff0000a9931000 size: 0x64acf7(6597879)
+[   1.207995] [I] [AND] padding prepended: 0
+[   1.209288] [I] [AND] vendor ramdisk copy
+[   1.209318] [I] [AND] ramdisk dst addr: 0xffff00008664acf7 src addr: 0xffff0000a5931000 size: 0x16a2591(23733649)
+[   1.209393] [I] [AND] padding prepended: 9
+[   1.213752] [I] [AND] ramdisk copy
+[   1.213780] [I] [AND] ramdisk dst addr: 0xffff000087ced291 src addr: 0xffff0000a4011000 size: 0x29d260(2740832)
+[   1.213860] [I] [AND] padding prepended: 15
+[   1.214410] [I] [AND] Ramdisk load size with padding: 33072384
+[   1.214474] [I] [DTBO] rev: 09875.00.00
+[   1.214515] [I] [DTBO] rev: 09875.00.00
+[   1.214553] [I] [DTBO] rev: 09875.00.00
+[   1.214585] [I] [DTBO] rev: 09875.00.01
+[   1.214625] [I] [DTBO] rev: 09875.00.00
+[   1.214658] [I] [DTBO] rev: 09875.00.01
+[   1.214688] [I] [DTBO] SOC DTB: index:3
+[   1.214726] [I] [DTBO] DTBO match: id 0x61306, rev 0x10000
+[   1.229844] [I] [AND] dpm not merged
+[   1.231340] [I] [AND] MTE S: 0, NS: 0, tag base: 0x0
+[   1.241128] [W] [PWR] power on source: 80
+[   1.241165] [I] [AND] bootmode:
+[   1.241212] [I] [AND] DDR size: 8GiB
+[   1.241240] [I] [AND] DDR Manufacturer: Samsung
+[   1.241409] [I] [AND] ro.misctrl.16kb_before=0
+[   1.241452] [I] [AND] console is disabled
+[   1.241584] [I] [BOOT] secure dram base 0xb6200000, size 0x9e00000
+[   1.241648] [I] [BOOT] secure PGTBL base 0xe0000000, size 58720256
+[   1.244494] [I] [BOOT] MTE S: 0, NS: 0, tag base: 0x0
+trusty_dev_common.c: INFO selected trusty api version: 3 (requested 3)
+[   1.256087] [I] [FDT] device: /reserved-memory/debug_snapshot/log_s2d path not found (-1)
+[   1.256231] [I] [FDT] device: /reserved-memory/debug_snapshot/log_array_reset path not found (-1)
+[   1.256375] [I] [FDT] device: /reserved-memory/debug_snapshot/log_kevents path not found (-1)
+[   1.256533] [I] [FDT] device: /reserved-memory/debug_snapshot/log_itmon path not found (-1)
+[   1.256672] [I] [FDT] device: /reserved-memory/debug_snapshot/log_s2d_extract path not found (-1)
+[   1.257740] [I] [FDT] device: /google,mitigation enabled ret=0
+[   1.270493] [I] [AND] ro.boot.hardware.cpu.pagesize=4096
+trusty_dev_common.c: INFO selected trusty api version: 3 (requested 3)
+trusty_dev_common.c: INFO selected trusty api version: 3 (requested 3)
+[   1.271008] [I] [DPU] panel settings after overriding: google-staea.3580a040@dsim0 null@dsim1
+[   1.285409] [I] [AND] linux,initrd-start: 0x86000000, linux,initrd-end: 0x87f8b4a1
+[   1.324250] [E] [AVB] avb_property(com.android.build.microdroid-vendor.root_digest): not found
+[   1.324325] [W] [PKVM_PVMFW] failed to get microdroid vendor hashtree digest from avb property, skip appending value
+trusty_dev_common.c: INFO selected trusty api version: 3 (requested 3)
+[   1.325592] [W] [PKVM_PVMFW] no avf debug policy, because dpm is NULL
+[   1.331155] [W] [PWR] power on source: 80
+[   1.376329] [UFS] Rough case temperature at 51 degrees celsius
+[   1.875663] [UFS] Rough case temperature at 50 degrees celsius
+[   2.375985] [UFS] Rough case temperature at 50 degrees celsius
+[   2.876307] [UFS] Rough case temperature at 50 degrees celsius
+[  11.391621] [I] [A/B] slot data a: 0x00001e02
+[  11.391656] [I] [A/B] slot data b: 0x00001800
+[  11.391714] [E] [UFS] Query failure: ocs=0xf query_response=0x0
+[  11.391764] [E] [UFS] query command failed (-1): func=0x1 op=0x3 idn=0x18 index=0x0 sel=0X0
+[  11.391828] [E] [UFS] Failed to read bDeviceCaseRoughTemp attribute ret=-1
+[  11.902284] [I] [UFS] shutdown complete

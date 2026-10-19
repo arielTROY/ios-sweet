@@ -1,0 +1,62 @@
+sweet usb: boot-arg sweetlinklocal=1 (ue0 169.254.7.2/16)
+
+For a host whose USB Ethernet interface only self-assigns 169.254/16
+(a Mac without admin rights). With sweetlogdst=0xa9feffff the live log
+is broadcast on that subnet (SO_BROADCAST for any x.y.255.255 target).
+
+--- a/bsd/dev/sweet_usb.c
++++ b/bsd/dev/sweet_usb.c
+@@ -708,6 +708,18 @@
+ 	socket_t so = NULL;
+ 	if (err == 0) {
+ 		err = sock_socket(PF_INET, SOCK_DGRAM, 0, NULL, NULL, &so);
++	}
++	/*
++	 * sweetlinklocal=1: 169.254.7.2/16 instead of 192.168.7.2/24, for a
++	 * host (e.g. a Mac without admin rights) whose USB Ethernet interface
++	 * only has a self-assigned 169.254/16 address.
++	 */
++	uint32_t ip = 0xc0a80702, mask = 0xffffff00, bcast = 0xc0a807ff;
++	int linklocal = 0;
++	if (PE_parse_boot_argn("sweetlinklocal", &linklocal, sizeof(linklocal)) && linklocal) {
++		ip = 0xa9fe0702;
++		mask = 0xffff0000;
++		bcast = 0xa9feffff;
+ 	}
+ 	if (err == 0) {
+ 		struct ifaliasreq ifra;
+@@ -716,20 +728,21 @@
+ 		struct sockaddr_in *a = (struct sockaddr_in *)&ifra.ifra_addr;
+ 		a->sin_len = sizeof(*a);
+ 		a->sin_family = AF_INET;
+-		a->sin_addr.s_addr = htonl(0xc0a80702);         /* 192.168.7.2 */
++		a->sin_addr.s_addr = htonl(ip);
+ 		a = (struct sockaddr_in *)&ifra.ifra_mask;
+ 		a->sin_len = sizeof(*a);
+ 		a->sin_family = AF_INET;
+-		a->sin_addr.s_addr = htonl(0xffffff00);
++		a->sin_addr.s_addr = htonl(mask);
+ 		a = (struct sockaddr_in *)&ifra.ifra_broadaddr;
+ 		a->sin_len = sizeof(*a);
+ 		a->sin_family = AF_INET;
+-		a->sin_addr.s_addr = htonl(0xc0a807ff);
++		a->sin_addr.s_addr = htonl(bcast);
+ 		err = sock_ioctl(so, SIOCAIFADDR, &ifra);
+ 		sock_close(so);
+ 	}
+ 	ifnet_set_flags(ud.ifp, IFF_UP | IFF_RUNNING, IFF_UP | IFF_RUNNING);
+-	printf("SWEET USB: ue0 192.168.7.2/24 %s (err %d)\n", err ? "NOT configured" : "up", err);
++	printf("SWEET USB: ue0 %u.%u.%u.%u %s (err %d)\n", ip >> 24, (ip >> 16) & 0xff,
++	    (ip >> 8) & 0xff, ip & 0xff, err ? "NOT configured" : "up", err);
+ }
+ 
+ static void
+@@ -871,7 +884,7 @@
+ 			so = NULL;
+ 			continue;
+ 		}
+-		if (logdst == 0xffffffffU) {
++		if (logdst == 0xffffffffU || (logdst & 0xffff) == 0xffff) {
+ 			int on = 1;
+ 			sock_setsockopt(so, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
+ 		}
