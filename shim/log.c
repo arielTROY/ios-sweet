@@ -63,10 +63,28 @@ static void uart_putc(char c)
  * (back into Android), while normal progress keeps it alive. WTCNT is
  * non-secure writable (CANARY9, 2026-10-19). */
 #define WDT_CL0_WTCNT	0x10060008UL
+#define WDT_CL1_WTCNT	0x10070008UL	/* armed too when Linux handed over */
 void wdt_kick(void)
 {
 	wr32(WDT_CL0_WTCNT, 0xffff);
+	wr32(WDT_CL1_WTCNT, 0xffff);
 }
+
+#ifdef SHIM_DIAG
+/* Diag mode: the log stays in RAM inside the image; sweetjump prints it
+ * after diag_main() returns to Linux. */
+#define RAMLOG_SIZE	(256u << 10)
+char ramlog[RAMLOG_SIZE];
+uint32_t ramlog_len;
+
+static void ramlog_put(const char *line)
+{
+	for (const char *p = line; *p && ramlog_len < RAMLOG_SIZE - 1; p++)
+		ramlog[ramlog_len++] = *p;
+	if (ramlog_len < RAMLOG_SIZE - 1)
+		ramlog[ramlog_len++] = '\n';
+}
+#endif
 
 /* Counted by the sentinel core (start.S) for the timing log. */
 volatile uint32_t log_lines;
@@ -75,6 +93,10 @@ void log_line(const char *line)
 {
 	wdt_kick();
 	log_lines++;
+#ifdef SHIM_DIAG
+	ramlog_put(line);
+	return;		/* Linux owns the ramoops zone in diag mode */
+#endif
 #ifdef SHIM_USBLOG
 	/* USB CDC-ACM log port (usblog.c); queued until a host connects. */
 	{

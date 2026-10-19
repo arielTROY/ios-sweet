@@ -20,6 +20,107 @@ _head:
 	.globl _start
 _start:
 	msr	daifset, #0xf
+#ifdef SHIM_DIAG
+	/*
+	 * Diag mode (sweetjump "go" from Linux with x0 = DIAG_MAGIC): run
+	 * diag_main() as a subroutine at EL2, MMU off, on our own stack, and
+	 * eret back into the hyp stub's exception context, i.e. to Linux,
+	 * with x0 = phys addr of the RAM log and x1 = its length. ELR_EL2 /
+	 * SPSR_EL2 must survive; SP_EL2 is saved and restored.
+	 */
+	movz	x9, #0x4741
+	movk	x9, #0x4944, lsl #16
+	movk	x9, #0x5753, lsl #32	/* 0x0000_5753_4944_4741 "SWDIAG" */
+	cmp	x0, x9
+	b.ne	8f
+	/* Linux's callee-saved x19-x30 and its shadow-call-stack x18 must
+	 * survive: the shim's C code is not built with -ffixed-x18. */
+	adr	x9, diag_save
+	stp	x18, x19, [x9, #0]
+	stp	x20, x21, [x9, #16]
+	stp	x22, x23, [x9, #32]
+	stp	x24, x25, [x9, #48]
+	stp	x26, x27, [x9, #64]
+	stp	x28, x29, [x9, #80]
+	str	x30, [x9, #96]
+	mov	x19, sp			/* stub's SP_EL2 */
+	mrs	x20, elr_el2
+	mrs	x21, spsr_el2
+	adr	x9, _stack_top
+	mov	sp, x9
+	adr	x9, _bss_start		/* zero .bss */
+	adr	x10, _bss_end
+1:	cmp	x9, x10
+	b.hs	2f
+	str	xzr, [x9], #8
+	b	1b
+2:	bl	diag_main		/* returns x0 = log PA, x1 = len */
+	msr	elr_el2, x20
+	msr	spsr_el2, x21
+	mov	sp, x19
+	adr	x9, diag_save
+	ldp	x18, x19, [x9, #0]
+	ldp	x20, x21, [x9, #16]
+	ldp	x22, x23, [x9, #32]
+	ldp	x24, x25, [x9, #48]
+	ldp	x26, x27, [x9, #64]
+	ldp	x28, x29, [x9, #80]
+	ldr	x30, [x9, #96]
+	isb
+	eret
+8:
+#endif
+#if defined(PROBE6) || defined(PROBE7)
+	/* DRAM survival in DSS crash-dump carve-outs (no-map, only written
+	 * on a real crash dump): markers at log_slcdump+1M and
+	 * log_preslcdump+1M. PROBE6 exits via watchdog, PROBE7 via PSCI. */
+	movz	x9, #0x4d45
+	movk	x9, #0x4d54, lsl #16
+	movk	x9, #0x4545, lsl #32
+	movk	x9, #0x5753, lsl #48
+	movz	x2, #0x0000
+	movk	x2, #0xdb51, lsl #16	/* 0xdb510000 */
+	str	x9, [x2]
+	str	x2, [x2, #8]
+	movz	x2, #0x0000
+	movk	x2, #0xdc61, lsl #16	/* 0xdc610000 */
+	str	x9, [x2]
+	str	x2, [x2, #8]
+	dsb	sy
+#ifdef PROBE6
+	b	.
+#endif
+#define CANARY0
+#endif
+#if defined(PROBE4) || defined(PROBE5)
+	/* Does DRAM survive our exit? Write "SWEETMEM" + address at three
+	 * spots; PROBE4 then PSCI-resets, PROBE5 lets the watchdog fire.
+	 * Read back from Android with sweetmem.ko. */
+	movz	x9, #0x4d45
+	movk	x9, #0x4d54, lsl #16
+	movk	x9, #0x4545, lsl #32
+	movk	x9, #0x5753, lsl #48	/* "SWEETMEM" little-endian? see below */
+	movz	x2, #0x0000
+	movk	x2, #0xc000, lsl #16
+	movk	x2, #0x9, lsl #32	/* 0x9c0000000 */
+	str	x9, [x2]
+	str	x2, [x2, #8]
+	movz	x2, #0x0000
+	movk	x2, #0xf000, lsl #16
+	movk	x2, #0x9, lsl #32	/* 0x9f0000000 */
+	str	x9, [x2]
+	str	x2, [x2, #8]
+	movz	x2, #0x0000
+	movk	x2, #0x8010, lsl #16
+	movk	x2, #0x8, lsl #32	/* 0x880100000 */
+	str	x9, [x2]
+	str	x2, [x2, #8]
+	dsb	sy
+#ifdef PROBE5
+	b	.
+#endif
+#define CANARY0
+#endif
 #ifdef PROBE3
 	/* SysMMU HSI0 (in front of DWC3 DMA): CTRL +0x0 / CTRL_VM(0)
 	 * +0x8000, bit 0 = enable. Either set -> reset now (~44 s);
@@ -110,6 +211,33 @@ _start:
 9:
 #define CANARY0
 #endif
+#ifdef CANARY11
+	/* Linux-launch proof: take over the watchdogs. cl1 off; cl0 armed
+	 * with its longest timeout (prescaler 255, /128, reset on: 0xffff
+	 * ticks of 24.576 MHz / 32768 = ~87 s). Then spin. Return after
+	 * ~90 s => this code ran; ~20-30 s => Linux's watchdog setup did. */
+	movz	x2, #0x0000
+	movk	x2, #0x1007, lsl #16	/* WDT cl1 */
+	str	wzr, [x2]		/* WTCON = 0 */
+	movz	x2, #0x0000
+	movk	x2, #0x1006, lsl #16	/* WDT cl0 */
+	str	wzr, [x2]		/* WTCON = 0 */
+	mov	w3, #1
+	str	w3, [x2, #0xc]		/* WTCLRINT */
+	movz	w3, #0xffff
+	str	w3, [x2, #4]		/* WTDAT */
+	str	w3, [x2, #8]		/* WTCNT */
+	movz	w3, #0xff39		/* prescaler 0xff, /128, enable, reset */
+	str	w3, [x2]
+	dsb	sy
+#ifdef CANARY12
+	/* sweetjump "go" test: return into the stub's exception context. */
+	ldr	w0, [x2]
+	movz	x1, #0x5eed
+	eret
+#endif
+	b	.
+#endif
 #ifdef CANARY10
 	/* 1-bit channel calibration: reboot mode := bootloader via EL3
 	 * PRIV_REG, then PSCI reset. Fastboot = channel works (the CANARY0
@@ -136,8 +264,11 @@ _start:
 	add	x5, x4, x5
 	mov	x6, #1
 	lsl	x6, x6, #31		/* iteration cap if CNTPCT is frozen */
+	movz	x7, #0x0008
+	movk	x7, #0x1007, lsl #16	/* WDT cl1 WTCNT (Linux arms it too) */
 1:	movz	w3, #0xffff
 	str	w3, [x2]
+	str	w3, [x7]
 	subs	x6, x6, #1
 	b.eq	2f
 	mrs	x4, cntpct_el0
@@ -386,6 +517,8 @@ sentinel_entry:
 
 	.data
 	.balign	8
+diag_save:
+	.skip	112
 	.globl sentinel_deadline
 sentinel_deadline:
 	.quad	0

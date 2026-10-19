@@ -34,6 +34,9 @@
 #ifndef SENTINEL_S
 #define SENTINEL_S		45	/* hard deadline for one shim run */
 #endif
+#ifndef DIAG_USB_WAIT_S
+#define DIAG_USB_WAIT_S		10
+#endif
 #define SMP_TARGET(mp)		((mp) << 8)
 #else
 #define IMEM_RESTART_REASON	0x146aa65cUL	/* qcom,msm-imem restart_reason@65c */
@@ -439,6 +442,45 @@ static uint32_t to_us(uint64_t ticks)
 {
 	return ticks * 1000 / (TIMEBASE_MHZ_X100 * 10);	/* ticks -> us */
 }
+
+#ifdef SHIM_DIAG
+/*
+ * Diag mode: called from start.S at EL2 (MMU off) when sweetjump starts us
+ * from Linux with x0 = DIAG_MAGIC. Runs a bounded test and returns; start.S
+ * erets back into Linux, and sweetjump prints the RAM log we return here.
+ * Linux-initialized hardware is live (USB PHY, repeater, VBUS override).
+ */
+extern char ramlog[];
+extern uint32_t ramlog_len;
+struct diag_ret { uint64_t pa, len; };
+
+struct diag_ret diag_main(void)
+{
+	log_line("SWEET DIAG: shim at EL2, called from Linux");
+	con_hex("CurrentEL", rsr("CurrentEL"));
+	con_hex("MPIDR", rsr("mpidr_el1"));
+	con_hex("CNTFRQ", rsr("cntfrq_el0"));
+#ifdef SHIM_USBLOG
+	int urc = usblog_init();
+	con_hex("USBLOG rc", (uint32_t)urc);
+	if (urc == 0) {
+		uint64_t f = rsr("cntfrq_el0");
+		uint64_t end = now() + (f ? f : 24576000) * DIAG_USB_WAIT_S;
+		for (uint64_t i = 0; i < 4000000000ULL && now() < end; i++) {
+			usblog_poll();
+			if (usblog_connected()) {
+				usblog_write("SWEET DIAG says hello over CDC-ACM\r\n", 37);
+			}
+		}
+		con_str("USBLOG", usblog_connected() ? "host configured us" : "no host");
+		usblog_flush(500);
+		usblog_stop();
+	}
+#endif
+	log_line("SWEET DIAG: returning to Linux");
+	return (struct diag_ret){ (uintptr_t)ramlog, ramlog_len };
+}
+#endif
 
 #ifdef TARGET_STALLION
 /*

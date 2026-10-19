@@ -15,7 +15,27 @@ Nothing has run on hardware. The init sequence, failure-mode list and the Exynos
 (not used yet) are in the header comment of usblog.c. Opt-in extras: `-DUSBLOG_PD_PROBE` (pd_hsi0
 status via the PMU-read SMC), `-DUSBLOG_FORCE_FS`.
 
-### >>> UPDATE 2026-10-18 late (stallion boot experiments — read first) <<<
+### >>> UPDATE 2026-10-19 morning (stallion: DIAG CHANNEL WORKS — read first) <<<
+
+**Bare-metal code with full text logs, no reboot:** `tools/stallion-diag.sh IMAGE`.
+How: root Android (Magisk, init_boot_a patched; su at /debug_ramdisk/su) booted via
+`fastboot boot shim/out-st/stock-nokvm.img` (stock boot.img + cmdline kvm-arm.mode=none, see
+tools/mkcmdlineboot.py) so EL2 keeps the arm64 hyp stub. Kernel modules built on the Mac
+(tools/stallion-ko/build.sh: clang + headers from kheaders.ko + CRCs from vendor_dlkm; needs a
+module.lds with .plt/.init.plt/.text.ftrace_trampoline):
+- sweetmem.ko: /proc/sweetmem (r/rl/w32 physical memory & MMIO; client tools/stallion-ko/sm.sh).
+  CAUTION: bulk reads of PMU (0x15460800..) or WDT (WTCLRINT) ranges from Linux panic the kernel.
+- sweetjump.ko: stage an Image in /proc/sweetjump, "go <x0>": copies to contiguous pages and does
+  HVC_SOFT_RESTART -> image runs at EL2, MMU off. "call" for tiny eret test images.
+Shim built with -DSHIM_DIAG + x0=DIAG_MAGIC (0x575349444741): start.S saves Linux x18-x30,
+SP_EL2, ELR/SPSR_EL2, runs diag_main() at EL2, logs to a RAM ring, erets back; sweetjump prints
+it as `sweetdiag:` lines. First run (logs/diag0.txt): CurrentEL 2, MPIDR 0x81000000, CNTFRQ
+24.576 MHz. Linux-launched non-returning images get reset by Linux's 30 s watchdogs (cl0/cl1,
+WTCON 0x115739) - use diag mode instead.
+Also found: Linux-side boot reason in `getprop ro.boot.bootreason` (watchdog / kernel_panic /
+reboot,...); pstore (console-ramoops) IS kept after a Linux panic (readable as root).
+
+
 
 Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dmesg`; its
 `[PRE]` lines = reset summary of the previous session):
