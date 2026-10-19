@@ -16,8 +16,8 @@ python3 tools/mkpayload.py --cmdline "debug=0x8 serial=3 sweetlogdst=0xa9feffff 
 SHIM_DEFS="-DSHIM_USBLOG -DNO_FDT_DUMP -DSENTINEL_S=120 -DSENTINEL_XNU_S=150" \
 	bash shim/build-stallion.sh >/dev/null 2>&1 || exit 1
 cp $O/Image $O/Image-xnu
-pkill -f stallion-usblog.sh; pkill -f "nc -ul 5140"
+pkill -f stallion-usblog.sh; pkill -f "nc -ul 5140"; pkill -f stallion-netlog.py
 tools/stallion-usblog.sh 900 > logs/xnu-usblog-listener.txt 2>&1 &
-tools/stallion-netlog.sh 900 > /dev/null 2>logs/xnu-netlog-listener.txt &
+python3 tools/stallion-netlog.py logs/xnu-net-$(date +%Y%m%d-%H%M%S).log 900 > /dev/null 2>logs/xnu-netlog-listener.txt &
 sleep 1
 tools/stallion-linuxjump.sh $O/Image-xnu $O/payload-xnu.bin

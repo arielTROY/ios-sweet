@@ -35,7 +35,28 @@ Nothing has run on hardware. The init sequence, failure-mode list and the Exynos
 (not used yet) are in the header comment of usblog.c. Opt-in extras: `-DUSBLOG_PD_PROBE` (pd_hsi0
 status via the PMU-read SMC), `-DUSBLOG_FORCE_FS`.
 
-### >>> UPDATE 2026-10-19 morning (stallion: DIAG CHANNEL WORKS — read first) <<<
+### >>> UPDATE 2026-10-19 13:20 (stallion: XNU BOOTS TO ROOT WAIT — read first) <<<
+
+`tools/stallion-xnu-run.sh` = one XNU boot (Path B: stock kernel with
+`kvm-arm.mode=none ehld.noehld=1 hardlockup_watchdog.hardlockup_panic=0 mem=3G` as stage 1,
+sweetjump places the XNU segments at 0x8c0000000 with caches on, shim at 0x9bd000000 only
+builds boot_args and jumps). Kernel from CI on **lyraresearchlabs/ios-sweet** (free macOS
+Actions; arielTROY is billing-locked). Boot-args: `debug=0x8 serial=3 sweetlogdst=0xa9feffff
+sweetlinklocal=1 cpus=1 -v -noprogress` (-noprogress: no FB -> progress-bar assert pe_init.c:314).
+Logs: (1) XNU RAM log (0082) is in Android pstore console-ramoops-0 after the reset (root:
+/debug_ramdisk/su -c cat /sys/fs/pstore/console-ramoops-0); (2) LIVE over USB Ethernet:
+the Mac sees "Sweet iOS (USB Ethernet)" as enX (169.254/16 self-assigned), XNU ue0 =
+169.254.7.2/16 broadcasts its console to :5140 -> `tools/stallion-netlog.py`.
+Result (logs/xnu-pstore3.txt): Darwin 22.6.0 up through VM/zones/IOKit/BSD, SWEET AMFI/
+Sandbox/HFS/AKS/HID/battery stand-ins, CPU0 SGI OK, DWC31 USB Ethernet enumerated, then
+`Waiting on ... IOMedia Apple_HFS` (no root device yet).
+NEXT: root filesystem. Needs (a) ~30 GB on the Mac to build the iOS 16.7.16 iPhone10,3 HFS+
+root (hdiutil works without sudo) and (b) a raw place on the phone: super has only ~1.6 GB
+free; userdata is metadata-encrypted (FBE + dm-default-key) so a file in /data is unusable ->
+repartition/wipe userdata needs the user's OK. Plus a stallion UFS path in XNU (/sweet-ufs for
+the Exynos UFSHCI at 0x13200000; the shim's UFS reads already work after Linux init).
+
+### >>> UPDATE 2026-10-19 morning (stallion: DIAG CHANNEL WORKS) <<<
 
 **Bare-metal code with full text logs, no reboot:** `tools/stallion-diag.sh IMAGE`.
 How: root Android (Magisk, init_boot_a patched; su at /debug_ramdisk/su) booted via
