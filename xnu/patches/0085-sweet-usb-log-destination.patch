@@ -1,0 +1,35 @@
+sweet usb: boot-arg sweetlogdst= for the live-log destination
+
+sweetlogdst=<IPv4 hex> overrides 192.168.7.1; 0xffffffff broadcasts
+(SO_BROADCAST), which a Mac receives on a USB Ethernet interface that only
+has a self-assigned address - no admin rights needed on the host.
+
+--- a/bsd/dev/sweet_usb.c
++++ b/bsd/dev/sweet_usb.c
+@@ -853,6 +853,15 @@
+ 	to.sin_family = AF_INET;
+ 	to.sin_port = htons(5140);
+ 	to.sin_addr.s_addr = htonl(0xc0a80701);         /* 192.168.7.1 */
++	/*
++	 * sweetlogdst=<IPv4 as hex>: other destination. 0xffffffff broadcasts,
++	 * which reaches a Mac whose USB Ethernet interface only has a
++	 * self-assigned address (no admin rights needed on the host).
++	 */
++	uint32_t logdst = 0;
++	if (PE_parse_boot_argn("sweetlogdst", &logdst, sizeof(logdst)) && logdst != 0) {
++		to.sin_addr.s_addr = htonl(logdst);
++	}
+ 	for (;;) {
+ 		ud_sleep_ms(100);
+ 		if (!ud.configured) {
+@@ -861,6 +870,10 @@
+ 		if (so == NULL && sock_socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP, NULL, NULL, &so) != 0) {
+ 			so = NULL;
+ 			continue;
++		}
++		if (logdst == 0xffffffffU) {
++			int on = 1;
++			sock_setsockopt(so, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
+ 		}
+ 		uint32_t n;
+ 		while ((n = sweet_log_copy(&pos, chunk, sizeof(chunk))) > 0) {
