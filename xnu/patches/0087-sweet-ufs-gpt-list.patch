@@ -1,0 +1,35 @@
+sweet ufs: list the GPT entries when the wanted partition is missing
+
+Diagnostic for stallion, where "userdata" (sda34) was not found.
+
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -349,7 +349,27 @@
+ 		su.nblocks = last - first + 1;
+ 		return 0;
+ 	}
+-	printf("SWEET UFS: no GPT partition named \"%s\"\n", want);
++	printf("SWEET UFS: no GPT partition named \"%s\" (entries %u x %u at LBA %llu); seen:\n",
++	    want, nent, esz, entry_lba);
++	for (uint32_t i = 0; i < nent; i++) {
++		const uint8_t *e = b + i * esz;
++		char name[37];
++		unsigned c;
++		for (c = 0; c < 36; c++) {
++			uint16_t ch = (uint16_t)(e[56 + 2 * c] | e[57 + 2 * c] << 8);
++			if (ch == 0 || ch > 0x7f) {
++				break;
++			}
++			name[c] = (char)ch;
++		}
++		name[c] = 0;
++		uint64_t first;
++		memcpy(&first, e + 32, 8);
++		if (c || first) {
++			printf("SWEET UFS:   #%u \"%s\" first %llu (bytes %02x %02x %02x %02x)\n",
++			    i + 1, name, first, e[56], e[57], e[58], e[59]);
++		}
++	}
+ 	return ENOENT;
+ }
+ 

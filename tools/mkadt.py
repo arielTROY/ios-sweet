@@ -62,6 +62,7 @@ ST_RAMLOG, ST_RAMLOG_SIZE = 0xfd3ff000, 0x200000
 # the HSI0 SysMMU CTRL_VM(0) in its DMA path (Linux leaves 0x25; the kernel
 # clears bit 0 = bypass). bsd/dev/sweet_usb.c (patch 0084) /sweet-usb.
 ST_USB, ST_USB_SIZE = 0x11210000, 0x10000
+ST_UFS, ST_UFS_SIZE = 0x13200000, 0x2000      # zuma-ufs.dtsi hci (UFSHCI) + vs_hci
 ST_USB_SYSMMU_CTRL = 0x11048000
 ST_PANIC_RESET_MS = 3000          # panic -> PSCI SYSTEM_RESET after 3 s
 ST_RESET_AFTER_S = 0              # in-kernel hang reset off: the shim's CPU7 sentinel does it
@@ -278,6 +279,15 @@ def build(seed=None, qemu=False, highmem=False, target='sweet', mem=None, fb=Non
         ('reg', u64(ST_USB, ST_USB_SIZE)),
         ('sweet-sysmmu-ctrl', u64(ST_USB_SYSMMU_CTRL)),
     ]) if st else None   # no phandle drawn for sweet: its ADT stays byte-identical
+    # Exynos UFSHCI (zuma-ufs.dtsi "hci"): standard UFSHCI register file, so
+    # bsd/dev/sweet_ufs.c drives it as-is once Linux (stage 1) has the link
+    # up. Its init also starts SPMI keys / GENI touch: pass sweetkeys=0
+    # sweettouch=0 on stallion (Qualcomm addresses).
+    st_ufs = node('sweet-ufs', [
+        ph(),
+        ('compatible', cstr('samsung,exynos-ufs')),
+        ('reg', u64(ST_UFS, ST_UFS_SIZE)),
+    ]) if st else None
 
     # pmap_compute_max_asids requires the node even when no overrides are set.
     # An absent pmap-max-asids property selects XNU's own MAX_ASIDS default.
@@ -313,7 +323,7 @@ def build(seed=None, qemu=False, highmem=False, target='sweet', mem=None, fb=Non
             ('manufacturer', cstr('Apple Inc.')),
             ('#address-cells', u32(2)),
             ('#size-cells', u32(2)),
-        ], [chosen, defaults, cpus, arm_io, mk_ramlog(), st_usb, buttons] + product + ([fbcon] if fb else []))
+        ], [chosen, defaults, cpus, arm_io, mk_ramlog(), st_usb, st_ufs, buttons] + product + ([fbcon] if fb else []))
 
     return node('device-tree', [
         ph(),

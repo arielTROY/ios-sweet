@@ -11,7 +11,7 @@ KERNEL=${1:-xnu/out-st/kernel.development.sweet}
 EXTRA=${2:-}
 O=shim/out-st
 python3 tools/mkadt.py $O/xnu.adt --target stallion --mem 0x8c0000000:0xf0000000 --panic-reset 5000 2>/dev/null || exit 1
-python3 tools/mkpayload.py --cmdline "debug=0x8 serial=3 sweetlogdst=0xa9feffff sweetlinklocal=1 cpus=1 -v -noprogress $EXTRA" \
+python3 tools/mkpayload.py --cmdline "debug=0x8 serial=3 sweetlogdst=0xa9feffff sweetlinklocal=1 sweetkeys=0 sweettouch=0 cpus=1 -v -noprogress $EXTRA" \
 	"$KERNEL" $O/xnu.adt $O/payload-xnu.bin >/dev/null || exit 1
 SHIM_DEFS="-DSHIM_USBLOG -DNO_FDT_DUMP -DSENTINEL_S=120 -DSENTINEL_XNU_S=150" \
 	bash shim/build-stallion.sh >/dev/null 2>&1 || exit 1
