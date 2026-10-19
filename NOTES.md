@@ -43,6 +43,11 @@ Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dme
   copy), so no fastboot/Android 1-bit channel; use timing (reset now vs feed WDT N s).
   PROBE1: DWC3 GSNPSID @0x1121c120 reads a DWC3 ID after handoff (31 s) -> USB controller
   clocked; a DWC3 CDC-ACM log gadget for the shim is in progress (agent worktree).
+- Timing baseline after Magisk root: immediate reset -> adb in ~44 s (was ~30 s). Re-calibrate the
+  timing log offset (CAL1 gave 32 s before root) before decoding line counts.
+- PROBE2: PMU+0x3eb0 (USB PHY enable/isolation) bit0 = 1 after handoff -> PHY not isolated.
+  USB gadget suspects left: SysMMU in front of DWC3 DMA, VBUS/session override
+  (is_not_vbus_pad), eUSB2 repeater (I2C 0x3E), PHY internal state. Next: sweetmem.ko dumps.
 - (superseded) **DANGER:** after that watchdog reset the phone sat on the Google logo until the user
   long-pressed power (reason 0xcccc). Watchdog resets are therefore NOT a safe net, and a
   working software reset is not yet known. The first milestone-A image also froze on the logo.

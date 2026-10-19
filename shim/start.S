@@ -20,6 +20,31 @@ _head:
 	.globl _start
 _start:
 	msr	daifset, #0xf
+#ifdef PROBE2
+	/* USB PHY power/isolation (PMU+0x3eb0, bit 0 = enable, as
+	 * exynos-usbdrd's pmu_offset). Set -> reset now (~30 s);
+	 * clear -> feed WDT 60 s, then reset (~90 s). */
+	movz	x2, #0x3eb0
+	movk	x2, #0x1546, lsl #16
+	ldr	w3, [x2]
+	tbnz	w3, #0, 9f
+	movz	x2, #0x0008
+	movk	x2, #0x1006, lsl #16
+	mrs	x4, cntpct_el0
+	movz	x5, #0x57e4, lsl #16	/* 60 s */
+	add	x5, x4, x5
+	mov	x6, #1
+	lsl	x6, x6, #31
+1:	movz	w3, #0xffff
+	str	w3, [x2]
+	subs	x6, x6, #1
+	b.eq	9f
+	mrs	x4, cntpct_el0
+	cmp	x4, x5
+	b.lo	1b
+9:
+#define CANARY0
+#endif
 #ifdef PROBE1
 	/* Is ABL's DWC3 still clocked after handoff? Timing answer:
 	 * GSNPSID looks like DWC3 -> reset now (~30 s to adb);
