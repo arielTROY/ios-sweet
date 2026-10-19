@@ -120,6 +120,9 @@
 
 void log_line(const char *line);
 
+static inline uint32_t rd32_abs(uintptr_t a) { return *(volatile uint32_t *)a; }
+static inline void wr32_abs(uintptr_t a, uint32_t v) { *(volatile uint32_t *)a = v; }
+
 #define DWC3_BASE		0x11210000UL
 
 /* ---- DWC3 global registers ---- */
@@ -1036,6 +1039,15 @@ int usblog_init(void)
 		ulog("pd_hsi0 STATUS via smc: %x", (uint32_t)x0);
 	}
 #endif
+	/* Linux runs the HSI0 SysMMU in front of DWC3 (CTRL_VM(0) bit 0);
+	 * ABL leaves it off. We DMA by physical address: force bypass. */
+	{
+		uint32_t vm0 = rd32_abs(0x11048000UL);
+		if (vm0 & 1) {
+			wr32_abs(0x11048000UL, vm0 & ~1u);
+			ulog("HSI0 SysMMU VM0 was %x: bypassed", vm0);
+		}
+	}
 	ulog("init: about to read GSNPSID @%x (a hang here = HSI0 off/unclocked)",
 	     (uint32_t)(DWC3_BASE + GSNPSID));
 	uint32_t id = rd32(GSNPSID);

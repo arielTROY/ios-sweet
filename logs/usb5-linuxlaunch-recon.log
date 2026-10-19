@@ -1,0 +1,391 @@
+==== 2026-10-19 06:32:24 attached /dev/cu.usbmodemSTALLION1 ====
+NODE mid-coldusblog: setup 00002221 len 0
+usblog: DTR 0 (host closed the port)
+
+NODE mid-switch-on
+NODE mid-control-temp
+NODE mid-alert1
+NODE mid-alert2
+NODE mid-sw_max_effort
+NODE mid-dfs
+NODE mid-hot
+NODE cooling-maps
+NODE map0
+NODE LITTLE
+NODE trips
+NODE little-cold
+NODE little-switch-on
+NODE little-control-temp
+NODE little-alert1
+NODE little-alert2
+NODE little-sw_max_effort
+NODE little-dfs
+NODE little-hot
+NODE cooling-maps
+NODE map0
+NODE G3D
+NODE trips
+NODE gpu-cold
+NODE gpu-switch-on
+NODE gpu-control-temp
+NODE gpu-alert1
+NODE gpu-alert2
+NODE gpu-sw_max_effort
+NODE gpu-dfs
+NODE gpu-hot
+NODE cooling-maps
+NODE map0
+NODE ISP
+NODE trips
+NODE isp-alert0
+NODE isp-alert1
+NODE isp-alert2
+NODE isp-alert3
+NODE isp-alert4
+NODE isp-alert5
+NODE isp-alert6
+NODE isp-hot
+NODE TPU
+NODE trips
+NODE tpu-cold
+NODE tpu-switch-on
+NODE tpu-control-temp
+NODE tpu-alert1
+NODE tpu-alert2
+NODE tpu-sw-max-effort
+NODE tpu-dfs
+NODE tpu-hot
+NODE cooling-maps
+NODE map0
+NODE AUR
+NODE trips
+NODE aur-cold
+NODE aur-switch-on
+NODE aur-control-temp
+NODE aur-alert1
+NODE aur-alert2
+NODE aur-sw_max_effort
+NODE aur-dfs
+NODE aur-hot
+NODE cooling-maps
+NODE map0
+NODE cp_on_chip_0
+NODE trips
+NODE trip_config
+NODE cp_on_chip_1
+NODE trips
+NODE trip_config
+NODE cp_on_chip_2usblog: setup 00032221 len 0
+usblog: DTR 1 (host opened the port)
+
+NODE tripsusblog: setup 00002021 len 7
+
+NODE trip_config
+usblog: setup 00002021 len 7
+NODE cp_on_chip_3
+NODE tripsusblog: setup 00002021 len 7
+
+NODE trip_config
+usblog: setup 00002021 len 7
+NODE rf2_therm
+NODE tripsusblog: setup 00002021 len 7
+
+NODE trip_config
+usblog: setup 00002021 len 7
+NODE rf1_therm
+NODE tripsusblog: setup 00002021 len 7
+
+NODE trip_config
+usblog: setup 00002021 len 7
+NODE rfpa_therm
+NODE trips
+NODE trip-config0
+NODE quiet_therm
+NODE trips
+NODE trip-config1
+NODE backup-shutdown-sw
+NODE backup-shutdown-hw
+NODE charging_therm
+NODE trips
+NODE trip-config2
+NODE usb_pwr_therm
+NODE trips
+NODE trip-config3
+NODE flash_therm
+NODE trips
+NODE trip-config4
+NODE disp_therm
+NODE trips
+NODE trip-config5
+NODE north_therm
+NODE trips
+NODE trip-config6
+NODE soc_therm
+NODE trips
+NODE trip-config7
+NODE batoilo2
+NODE trips
+NODE batoilo2
+NODE batoilo
+NODE trips
+NODE batoilo
+NODE vdroop1
+NODE trips
+NODE vdroop1
+NODE vdroop2
+NODE trips
+NODE vdroop2
+NODE battery_cycle
+NODE trips
+NODE dud0
+NODE pmic_120c
+NODE trips
+NODE pmic-120c
+NODE pmic_140c
+NODE trips
+NODE pmic-140c
+NODE pmic_overheat
+NODE trips
+NODE pmic-overheat
+NODE soc
+NODE trips
+NODE soc-trip
+NODE smpl_gm
+NODE trips
+NODE smpl_0
+NODE ocp_cpu1
+NODE trips
+NODE ocp-cpu1
+NODE ocp_cpu2
+NODE trips
+NODE ocp-cpu2
+NODE soft_ocp_cpu1
+NODE trips
+NODE soft-ocp-cpu1
+NODE soft_ocp_cpu2
+NODE trips
+NODE soft-ocp-cpu2
+NODE ocp_tpu
+NODE trips
+NODE ocp-tpu
+NODE soft_ocp_tpu
+NODE trips
+NODE soft-ocp-tpu
+NODE ocp_gpu
+NODE trips
+NODE ocp-gpu
+NODE soft_ocp_gpu
+NODE trips
+NODE soft-ocp-gpu
+NODE acpm_gov
+NODE __symbols__
+NODE google,battery
+  google,battery compatible=google,battery
+NODE google,batt-id-1-atl
+NODE google,batt-id-4-lwn
+NODE google,batt-id-17-atl
+NODE google,batt-id-20-lwn
+NODE google_bms
+NODE maxim,max77779fwu
+  maxim,max77779fwu compatible=maxim,max77779fwu
+NODE google,mitigation
+  google,mitigation compatible=google,google-bcl
+NODE irq_config
+NODE main_limit
+NODE ch1
+NODE ch2
+NODE ch3
+NODE ch4
+NODE ch5
+NODE ch6
+NODE ch7
+NODE ch8
+NODE ch9
+NODE ch10
+NODE ch11
+NODE ch12
+NODE sub_limit
+NODE ch1
+NODE ch2
+NODE ch3
+NODE ch4
+NODE ch5
+NODE ch6
+NODE ch7
+NODE ch8
+NODE ch9
+NODE ch10
+NODE ch11
+NODE ch12
+NODE main_mitigation
+NODE ch1
+NODE ch2
+NODE ch3
+NODE ch4
+NODE ch5
+NODE ch6
+NODE ch7
+NODE ch8
+NODE ch9
+NODE ch10
+NODE ch11
+NODE ch12
+NODE sub_mitigation
+NODE ch1
+NODE ch2
+NODE ch3
+NODE ch4
+NODE ch5
+NODE ch6
+NODE ch7
+NODE ch8
+NODE ch9
+NODE ch10
+NODE ch11
+NODE ch12
+NODE freq_qos
+NODE batoilo
+NODE smpl_warn
+NODE ramp_lvl_1
+NODE ramp_lvl_2
+NODE ramp_lvl_3
+NODE cam_supply@0
+  cam_supply@0 compatible=regulator-fixed
+NODE google,cpm
+  google,cpm compatible=google,cpm
+NODE google,charger
+  google,charger compatible=google,charger
+NODE google,wlc_charger
+NODE google,wlc_fcc_charger
+NODE google,mdis_charger
+NODE cp-tm1
+  cp-tm1 compatible=google,gs101-cp-thermal
+NODE cpif
+  cpif compatible=samsung,exynos-cp
+NODE cpif_tpmon
+NODE tpmon_rps
+NODE boost0
+NODE tpmon_gro_flush_time
+NODE boost0
+NODE tpmon_mif
+NODE boost0
+NODE tpmon_cpu_cl0
+NODE boost0
+NODE tpmon_cpu_cl1
+NODE boost0
+NODE tpmon_pcie_low_power
+NODE boost0
+NODE tpmon_irq_affinity_0
+NODE boost0
+NODE tpmon_irq_dit
+NODE boost0
+NODE boost1
+NODE boost2
+NODE iodevs
+NODE io_device_0
+NODE io_device_1
+NODE io_device_2
+NODE io_device_3
+NODE io_device_4
+NODE io_device_5
+NODE io_device_6
+NODE io_device_7
+NODE io_device_8
+NODE io_device_9
+NODE io_device_10
+NODE io_device_11
+NODE io_device_12
+NODE io_device_13
+NODE io_device_14
+NODE io_device_15
+NODE io_device_16
+NODE cp_shmem
+  cp_shmem compatible=samsung,exynos-cp-shmem
+NODE regions
+NODE ipc
+NODE msi
+NODE pktproc
+NODE pktproc_ul
+NODE vss_aoc
+NODE gnss_fw
+NODE s5910_bb
+  s5910_bb compatible=google,bitbang-spmi-controller
+NODE pmic@0
+  pmic@0 reg=00000000
+  pmic@0 compatible=google,cp-pmic-spmi
+NODE s5910@5
+  s5910@5 reg=00000000
+  s5910@5 compatible=google,s5910-spmi
+NODE gnssif
+  gnssif compatible=samsung,exynos-gnss
+NODE tbn
+  tbn compatible=touch_bus_negotiator
+NODE google,usbc_port_cooling_dev
+  google,usbc_port_cooling_dev compatible=google,usbc_port_cooling_dev
+NODE sbb-mux
+  sbb-mux compatible=google,sbb-mux
+NODE module_power_seq@0
+NODE module_power_seq@1
+NODE module_power_seq@2
+NODE sensor@0
+  sensor@0 compatible=google,lwis-i2c-device
+NODE sensor@1
+  sensor@1 compatible=google,lwis-i2c-device
+NODE sensor@2
+  sensor@2 compatible=google,lwis-i2c-device
+NODE eeprom@0
+  eeprom@0 compatible=google,lwis-i2c-device
+NODE eeprom@1
+  eeprom@1 compatible=google,lwis-i2c-device
+NODE eeprom@2
+  eeprom@2 compatible=google,lwis-i2c-device
+NODE actuator@0
+  actuator@0 compatible=google,lwis-i2c-device
+NODE ois@0
+  ois@0 compatible=google,lwis-i2c-device
+NODE flash@0
+  flash@0 compatible=google,lwis-i2c-device
+NODE gs-drm-connector
+  gs-drm-connector compatible=google,drm_connector
+NODE port
+NODE endpoint
+NODE panel@0
+  panel@0 compatible=google,gs-staea
+NODE panel@1
+  panel@1 compatible=google,gs-tg4b
+NODE panel@2
+  panel@2 compatible=google,gs-tg4c
+NODE panel@3
+  panel@3 compatible=google,panel-gs-simple
+FDTdumped to prz
+
+INITRDlo=86000000hi=87F8B4A1
+LOADERno SWEETXNU payload
+
+UFSmilestone 5 probe (read-only)
+UFSver=00000300cap=1383FF1F
+UFShce=00000001hcs=0000010F
+UFSis=00000000rsr=00000001
+UFSutrlba=8E5F5000hi=00000000
+UFSdbr=00000000nutrs=00000020
+UFSours=F5C9A000rsr=00000001
+UFS TURrc=00000000ocs/st=00000000
+UFS CAPrc=00000000ocs/st=00000000
+UFS LUN0lastlba=01DB43FFblk=00001000
+UFS READrc=00000000ocs/st=00000000
+UFS MBRsig=0000AA55type=000000EE
+UFS GPT........
+UFS GPTentries=00000000lba=00000000
+
+PSCIver=00010001smccc=00010002
+CPU_ONfeat=00000000
+CPU_OFFfeat=00000000
+RESETfeat=00000000
+SYS_RST2feat=00000000
+SUSPENDfeat=00000000
+
+GICDwas=00000012now=00000012
+GICRbase=10440000waker=00000000
+ENABLEwas=4080207Fnow=4880207F
+ICCctlr=00088402grpen1=00000001
+==== 2026-10-19 06:33:24 detached ====

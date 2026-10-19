@@ -41,6 +41,15 @@ with IRQs off for ~10 s ("hard HANG ... by EHLD"); writing /sys/devices/system/e
 tracer-ehld/ehld_enable triggers a CFI panic - don't; keep diag runs short or boot with
 ehld.noehld=1 (verify it applies). From ABL handoff the same gadget never attaches: Linux's
 PHY/repeater/VBUS setup is what's missing -> next: dump Linux-state PHY regs and replay.
+**Linux-launched non-returning shim with live USB log (06:32, logs/usb5-linuxlaunch-recon.log,
+tools/stallion-linuxjump.sh + tools/stallion-usblog.sh):** full recon streamed over CDC-ACM.
+UFS: sweet's UFSHCI driver works as-is after Linux init (TUR/READ CAPACITY/READ ok; LUN0
+0x1DB4400 x 4096-byte blocks ~124 GB; protective MBR -> GPT; GPT parser needs 4K-LBA fix).
+PSCI 1.1 / SMCCC 1.2; GIC reachable (GICR 0x10440000 awake, ICC grpen1=1).
+=> Plan "Path B": Android stock kernel (kvm-arm.mode=none ehld.noehld=1 + mem= cap so Linux
+never touches the XNU window in the 6 GB bank) is stage 1; sweetjump hands a scatter list of
+the XNU payload pages to the shim, which copies it into the free window and boots XNU with
+Linux-initialized clocks/PHYs/regulators/UFS/display. XNU kernel builds still blocked on CI.
 Also found: Linux-side boot reason in `getprop ro.boot.bootreason` (watchdog / kernel_panic /
 reboot,...); pstore (console-ramoops) IS kept after a Linux panic (readable as root).
 
