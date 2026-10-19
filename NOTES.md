@@ -51,7 +51,9 @@ Observed on device (logs in `logs/st-abl/`, bootloader log via `fastboot oem dme
 - `/sys/fs/pstore` is NOT readable from adb shell (Permission denied); `logcat -L` fails.
 - CI: run 39164660121 (main 00b847e, patches through 0083) did not start: "account is
   locked due to a billing issue" on arielTROY. Local build impossible here (no Xcode,
-  ~5 GB free). Kernel builds wait for the billing fix.
+  ~5 GB free). Kernel builds wait for the billing fix. Re-run 2026-10-19 00:41 sat "queued" for 2.5 h
+  without starting (lock still effective). Options: fix billing, or fork into an org the
+  user belongs to (needs user OK).
 - A/B: "AB Decision: decrement active slot boot retry"; slot data a 0x1c00 -> 0x1e01 after
   a stock Android boot. Watch it.
 
