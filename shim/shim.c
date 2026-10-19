@@ -444,6 +444,7 @@ static uint32_t to_us(uint64_t ticks)
 }
 
 #ifdef SHIM_DIAG
+#define SYSMMU_HSI0_CTRL_VM0	0x11048000UL	/* samsung sysmmu-v9 CTRL_VM(0) */
 /*
  * Diag mode: called from start.S at EL2 (MMU off) when sweetjump starts us
  * from Linux with x0 = DIAG_MAGIC. Runs a bounded test and returns; start.S
@@ -461,6 +462,13 @@ struct diag_ret diag_main(void)
 	con_hex("MPIDR", rsr("mpidr_el1"));
 	con_hex("CNTFRQ", rsr("cntfrq_el0"));
 #ifdef SHIM_USBLOG
+	/* Linux runs the HSI0 SysMMU in front of DWC3 (CTRL_VM(0) = 0x25);
+	 * ABL leaves it off and our gadget DMAs by physical address. Bypass
+	 * it for the test, restore Linux's value afterwards. */
+	uint32_t smmu = rd32(SYSMMU_HSI0_CTRL_VM0);
+	con_hex("SYSMMU VM0", smmu);
+	wr32(SYSMMU_HSI0_CTRL_VM0, smmu & ~1u);
+	__asm__ volatile("dsb sy" ::: "memory");
 	int urc = usblog_init();
 	con_hex("USBLOG rc", (uint32_t)urc);
 	if (urc == 0) {
@@ -476,6 +484,8 @@ struct diag_ret diag_main(void)
 		usblog_flush(500);
 		usblog_stop();
 	}
+	wr32(SYSMMU_HSI0_CTRL_VM0, smmu);
+	__asm__ volatile("dsb sy" ::: "memory");
 #endif
 	log_line("SWEET DIAG: returning to Linux");
 	return (struct diag_ret){ (uintptr_t)ramlog, ramlog_len };

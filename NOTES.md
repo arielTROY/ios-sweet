@@ -32,6 +32,15 @@ SP_EL2, ELR/SPSR_EL2, runs diag_main() at EL2, logs to a RAM ring, erets back; s
 it as `sweetdiag:` lines. First run (logs/diag0.txt): CurrentEL 2, MPIDR 0x81000000, CNTFRQ
 24.576 MHz. Linux-launched non-returning images get reset by Linux's 30 s watchdogs (cl0/cl1,
 WTCON 0x115739) - use diag mode instead.
+**USB WORKS (2026-10-19 06:28, logs/diagusb4.txt):** shim usblog.c (DWC_usb31 1.30a, CDC-ACM)
+enumerated on the Mac as /dev/cu.usbmodemSTALLION1 at high speed, host opened the port (DTR),
+1.97 MB streamed. Needed in Linux-launched diag mode: HSI0 SysMMU CTRL_VM(0) @0x11048000
+(Linux 0x25) bit0 cleared for the test (else SysMMU READ PAGE FAULT panic), restored after;
+diag-run.sh rebinds UDC 11210000.dwc3 afterwards so adb returns. Gotchas: EHLD panics a CPU
+with IRQs off for ~10 s ("hard HANG ... by EHLD"); writing /sys/devices/system/exynos-adv-
+tracer-ehld/ehld_enable triggers a CFI panic - don't; keep diag runs short or boot with
+ehld.noehld=1 (verify it applies). From ABL handoff the same gadget never attaches: Linux's
+PHY/repeater/VBUS setup is what's missing -> next: dump Linux-state PHY regs and replay.
 Also found: Linux-side boot reason in `getprop ro.boot.bootreason` (watchdog / kernel_panic /
 reboot,...); pstore (console-ramoops) IS kept after a Linux panic (readable as root).
 
