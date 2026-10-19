@@ -487,6 +487,22 @@ struct diag_ret diag_main(void)
 	wr32(SYSMMU_HSI0_CTRL_VM0, smmu);
 	__asm__ volatile("dsb sy" ::: "memory");
 #endif
+#ifdef DIAG_SENTINEL
+	/* Does PSCI CPU_ON of the sentinel core work from a Linux launch? */
+	{
+		extern void sentinel_entry(void);
+		extern volatile uint64_t sentinel_deadline;
+		uint64_t r = smc(PSCI_CPU_ON, SMP_TARGET(7), (uintptr_t)sentinel_entry, 0);
+		con_hex("CPU_ON7", r);
+		con_hex("AFF_INFO7", smc(0xc4000004, SMP_TARGET(7), 0, 0));
+		delay_ms(300);
+		con_hex("AFF_INFO7+300ms", smc(0xc4000004, SMP_TARGET(7), 0, 0));
+		extern volatile uint64_t sentinel_alive;
+		con_hex("sentinel_alive", sentinel_alive);
+		con_hex("sentinel@", (uintptr_t)sentinel_entry);
+		(void)sentinel_deadline;
+	}
+#endif
 #ifdef DIAG_LOADER
 	/* Loader dry run against a payload sweetjump placed at the staging
 	 * address (it passes x1/x2 to the image; diag reads the header). */

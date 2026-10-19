@@ -488,7 +488,11 @@ sentinel_entry:
 	mrs	x9, cnthctl_el2
 	orr	x9, x9, #3
 	msr	cnthctl_el2, x9
-1:	adr	x2, sentinel_deadline
+1:	adr	x2, sentinel_alive	/* proof of life for diag */
+	mrs	x3, cntpct_el0
+	str	x3, [x2]
+	dsb	sy
+	adr	x2, sentinel_deadline
 	movz	x10, #0x0008
 	movk	x10, #0x1006, lsl #16	/* WDT cl0 WTCNT */
 	movz	x11, #0x0008
@@ -535,6 +539,9 @@ diag_save:
 	.skip	112
 	.globl sentinel_deadline
 sentinel_deadline:
+	.quad	0
+	.globl sentinel_alive
+sentinel_alive:
 	.quad	0
 	.text
 
